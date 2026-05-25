@@ -6,7 +6,7 @@ from typing import Optional
 import sqlite3, json, os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 
 app = FastAPI(title="Prometheus API")
 
@@ -23,7 +23,6 @@ SECRET_KEY  = os.environ.get("SECRET_KEY", "prometheus-change-this-in-production
 ALGORITHM   = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
-pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2   = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 ADMIN_USER    = "manny"
@@ -96,11 +95,11 @@ init_db()
 
 
 # ── Auth helpers ─────────────────────────────────────────────
-def verify_password(plain, hashed):
-    return pwd_ctx.verify(plain, hashed)
+def verify_password(plain: str, hashed: str) -> bool:
+    return _bcrypt.checkpw(plain.encode(), hashed.encode())
 
-def hash_password(plain):
-    return pwd_ctx.hash(plain)
+def hash_password(plain: str) -> str:
+    return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt()).decode()
 
 def create_token(data: dict):
     payload = data.copy()
