@@ -720,7 +720,7 @@ async function init() {
   updateStats();
   renderHistory();
   addExercise();
-  updateExportSummary();
+  if (currentUser) updateExportSummary();
   prefillBodyweight();
 }
 
@@ -787,7 +787,7 @@ function addExercise() {
   `;
   document.getElementById('ex-container').appendChild(div);
   onExChange(id);
-  addSet(id); addSet(id);
+  addSet(id);
   calcRD();
 }
 
