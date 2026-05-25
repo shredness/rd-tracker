@@ -17,26 +17,68 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Config ────────────────────────────────────────────────────
-DB_PATH     = os.environ.get("DB_PATH", "/data/sessions.db")
-SECRET_KEY  = os.environ.get("SECRET_KEY", "prometheus-change-this-in-production")
-ALGORITHM   = "HS256"
+DB_PATH           = os.environ.get("DB_PATH", "/data/sessions.db")
+SECRET_KEY        = os.environ.get("SECRET_KEY", "prometheus-change-this-in-production")
+ALGORITHM         = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
-oauth2   = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-ADMIN_USER    = "manny"
-ADMIN_PASS    = "pR0m3th3us"
-DEMO_USER     = "demo"
-DEMO_PASS     = "demo"   # intentionally weak — read-only account
+ADMIN_USER = "manny"
+ADMIN_PASS = "pR0m3th3us"
+DEMO_USER  = "demo"
+DEMO_PASS  = "demo"
 
 
-# ── DB ───────────────────────────────────────────────────────
+# ── DB ────────────────────────────────────────────────────────
 def get_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def migrate_sessions_to_per_set_time(conn):
+    """
+    One-time migration: move ex.time down to each set as set.time.
+    After migration, ex.time is removed (density recalculated from sets).
+    Idempotent — skips sets that already have a time field.
+    """
+    rows = conn.execute("SELECT id, exercises FROM sessions").fetchall()
+    updated = 0
+    for r in rows:
+        exercises = json.loads(r["exercises"])
+        changed = False
+        for ex in exercises:
+            ex_time = ex.get("time", 10)
+            new_sets = []
+            for s in ex.get("sets", []):
+                if "time" not in s:
+                    s["time"] = ex_time
+                    changed = True
+                new_sets.append(s)
+            ex["sets"] = new_sets
+            # Recalculate density from per-set data
+            if changed:
+                total_density = sum(
+                    (s.get("vol", 0) / s.get("time", 1))
+                    for s in new_sets if s.get("time", 0) > 0
+                )
+                ex["density"] = round(total_density, 2)
+                ex["totalVol"] = round(sum(s.get("vol", 0) for s in new_sets), 1)
+        if changed:
+            # Recalculate session RD
+            bw = conn.execute("SELECT bw FROM sessions WHERE id=?", (r["id"],)).fetchone()["bw"]
+            total_ex_density = sum(ex.get("density", 0) for ex in exercises)
+            rd = round(total_ex_density / bw, 2) if bw else 0
+            conn.execute(
+                "UPDATE sessions SET exercises=?, rd=?, total_density=? WHERE id=?",
+                (json.dumps(exercises), rd, round(total_ex_density, 2), r["id"])
+            )
+            updated += 1
+    if updated:
+        conn.commit()
+        print(f"Migrated {updated} sessions to per-set time model")
 
 
 def init_db():
@@ -66,35 +108,36 @@ def init_db():
         )
     """)
 
-    # Migrate: add user_id column to existing sessions if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
-    if 'user_id' not in cols:
+    if "user_id" not in cols:
         conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
 
-    # Seed admin user
-    existing = conn.execute("SELECT id FROM users WHERE username=?", (ADMIN_USER,)).fetchone()
-    if not existing:
+    conn.commit()
+
+    # Seed admin
+    if not conn.execute("SELECT id FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
         conn.execute(
             "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
             (ADMIN_USER, _bcrypt.hashpw(ADMIN_PASS.encode(), _bcrypt.gensalt()).decode(), "admin")
         )
-
-    # Seed demo user
-    existing_demo = conn.execute("SELECT id FROM users WHERE username=?", (DEMO_USER,)).fetchone()
-    if not existing_demo:
+    # Seed demo
+    if not conn.execute("SELECT id FROM users WHERE username=?", (DEMO_USER,)).fetchone():
         conn.execute(
             "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
             (DEMO_USER, _bcrypt.hashpw(DEMO_PASS.encode(), _bcrypt.gensalt()).decode(), "demo")
         )
 
     conn.commit()
+
+    # Run per-set time migration
+    migrate_sessions_to_per_set_time(conn)
     conn.close()
 
 
 init_db()
 
 
-# ── Auth helpers ─────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────
 def verify_password(plain: str, hashed: str) -> bool:
     return _bcrypt.checkpw(plain.encode(), hashed.encode())
 
@@ -132,7 +175,6 @@ async def admin_only(user=Depends(current_user)):
     return user
 
 def data_user_id(user: dict) -> int:
-    """Demo user reads from admin (manny). Everyone else reads their own data."""
     if user["role"] == "demo":
         conn = get_db()
         admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
@@ -141,22 +183,23 @@ def data_user_id(user: dict) -> int:
     return user["id"]
 
 
-# ── Models ───────────────────────────────────────────────────
+# ── Models ────────────────────────────────────────────────────
 class SetData(BaseModel):
     reps: float
     rawLoad: float
     trueLbs: float
     vol: float
+    time: float = 2.0          # per-set time in minutes
 
 class ExerciseData(BaseModel):
     name: str
-    time: float
     sets: list[SetData]
     totalVol: float
     density: float
     tool: Optional[str] = "Bar"
     mult: Optional[float] = 2.0
     isBW: Optional[bool] = False
+    time: Optional[float] = None  # kept for legacy compat, ignored in calc
 
 class SessionIn(BaseModel):
     date: str
@@ -168,7 +211,7 @@ class SessionIn(BaseModel):
 class UserCreate(BaseModel):
     username: str
     password: str
-    role: str = "guest"  # guest | demo | admin
+    role: str = "guest"
 
 
 # ── Auth endpoints ────────────────────────────────────────────
@@ -192,7 +235,7 @@ def me(user=Depends(current_user)):
     return {"username": user["username"], "role": user["role"], "id": user["id"]}
 
 
-# ── Admin: user management ────────────────────────────────────
+# ── Admin ─────────────────────────────────────────────────────
 @app.get("/admin/users")
 def list_users(user=Depends(admin_only)):
     conn = get_db()
@@ -203,14 +246,11 @@ def list_users(user=Depends(admin_only)):
 @app.post("/admin/users")
 def create_user(body: UserCreate, user=Depends(admin_only)):
     conn = get_db()
-    existing = conn.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()
-    if existing:
+    if conn.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="Username already exists")
-    conn.execute(
-        "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
-        (body.username, hash_password(body.password), body.role)
-    )
+    conn.execute("INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
+                 (body.username, hash_password(body.password), body.role))
     conn.commit()
     conn.close()
     return {"status": "created", "username": body.username}
@@ -256,6 +296,23 @@ def save_session(session: SessionIn, user=Depends(current_user)):
     if user["role"] == "demo":
         raise HTTPException(status_code=403, detail="Demo account is read-only")
     uid = user["id"]
+
+    # Recalculate density and RD server-side from per-set time
+    exercises_out = []
+    total_density = 0.0
+    for ex in session.exercises:
+        set_density = sum(
+            (s.vol / s.time) for s in ex.sets if s.time > 0
+        )
+        total_density += set_density
+        exercises_out.append({
+            **ex.dict(),
+            "density": round(set_density, 2),
+            "totalVol": round(sum(s.vol for s in ex.sets), 1),
+        })
+
+    rd = round(total_density / session.bw, 2) if session.bw else 0
+
     conn = get_db()
     try:
         conn.execute("""
@@ -264,14 +321,14 @@ def save_session(session: SessionIn, user=Depends(current_user)):
             ON CONFLICT(user_id, date) DO UPDATE SET
                 bw=excluded.bw, rd=excluded.rd,
                 total_density=excluded.total_density, exercises=excluded.exercises
-        """, (uid, session.date, session.bw, session.rd, session.total_density,
-              json.dumps([e.dict() for e in session.exercises])))
+        """, (uid, session.date, session.bw, rd, round(total_density, 2),
+              json.dumps(exercises_out)))
         conn.commit()
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=str(e))
     conn.close()
-    return {"status": "saved", "date": session.date}
+    return {"status": "saved", "date": session.date, "rd": rd}
 
 @app.delete("/sessions/{date}")
 def delete_session(date: str, user=Depends(current_user)):
