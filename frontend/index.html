@@ -184,7 +184,9 @@
 <div id="login-screen" style="display:none; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
   <div style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-lg); padding:32px; width:100%; max-width:360px; box-shadow:0 12px 40px rgba(0,0,0,0.3);">
     <div style="text-align:center; margin-bottom:28px;">
-      <img src="/icon-192.png" style="width:64px; height:64px; border-radius:50%; margin-bottom:12px;">
+      <div style="width:72px;height:72px;border-radius:50%;background:#111110;margin:0 auto 12px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+        <img src="icon-192.png" style="width:72px;height:72px;" onerror="this.style.display='none';this.parentNode.innerHTML='🔥';">
+      </div>
       <h1 style="font-size:22px; font-weight:700; margin-bottom:4px;">Prometheus</h1>
       <p style="font-size:13px; color:var(--text2);">Relative density tracker</p>
     </div>
@@ -606,12 +608,57 @@ function applyRoleUI() {
   const isAdmin = currentUser?.role === 'admin';
   const names   = ['log','history','trend','bank','progress','export'];
 
-  // Demo: show only History, Trend, Progress
-  const demoHide = ['log','bank','export'];
+  // Show all tabs for everyone (demo sees everything, just can't write)
   names.forEach(n => {
     const btn = document.querySelector(`.tab[onclick="switchTab('${n}')"]`);
-    if (btn) btn.style.display = (isDemo && demoHide.includes(n)) ? 'none' : '';
+    if (btn) btn.style.display = '';
   });
+
+  // Demo: disable write controls visually
+  if (isDemo) {
+    // Add a readonly banner that we'll inject after the app loads
+    setTimeout(() => {
+      const existing = document.getElementById('demo-banner');
+      if (!existing) {
+        const banner = document.createElement('div');
+        banner.id = 'demo-banner';
+        banner.style.cssText = 'background:var(--accent-bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;font-size:12px;color:var(--accent-text);margin-bottom:16px;text-align:center;';
+        banner.textContent = 'You are viewing in read-only demo mode — data belongs to Manny.';
+        const app = document.querySelector('.app');
+        const tabs = document.querySelector('.tabs');
+        if (app && tabs) app.insertBefore(banner, tabs.nextSibling);
+      }
+
+      // Hide action buttons for demo users
+      const hideForDemo = [
+        'save-btn',           // Save session button
+        'export-btn',         // Export button
+        'tab-btn-users',      // Users tab
+      ];
+      hideForDemo.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+
+      // Disable all inputs and buttons in the workout form
+      document.querySelectorAll('#tab-log input, #tab-log select, #tab-log button').forEach(el => {
+        el.disabled = true;
+        el.style.opacity = '0.5';
+        el.style.cursor = 'not-allowed';
+      });
+
+      // Disable add/delete buttons in exercise bank
+      document.querySelectorAll('#tab-bank input, #tab-bank select, #tab-bank button').forEach(el => {
+        el.disabled = true;
+        el.style.opacity = '0.5';
+        el.style.cursor = 'not-allowed';
+      });
+
+      // Hide edit/delete in history
+      document.querySelectorAll('.history-actions').forEach(el => el.style.display = 'none');
+
+    }, 300);
+  }
 
   // Users tab: admin only
   const usersBtn = document.getElementById('tab-btn-users');
@@ -918,6 +965,12 @@ function updateStats() {
 function renderHistory() {
   const list = document.getElementById('history-list');
   if (!sessions.length) { list.innerHTML = '<div class="empty">No sessions logged yet.</div>'; return; }
+  // Re-apply demo restrictions after re-render
+  if (currentUser?.role === 'demo') {
+    setTimeout(() => {
+      document.querySelectorAll('.history-actions').forEach(el => el.style.display = 'none');
+    }, 50);
+  }
   list.innerHTML = [...sessions].reverse().map((s, i, arr) => {
     const prev = arr[i+1];
     let badge = '';
