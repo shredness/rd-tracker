@@ -76,7 +76,7 @@ def init_db():
     if not existing:
         conn.execute(
             "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
-            (ADMIN_USER, pwd_ctx.hash(ADMIN_PASS), "admin")
+            (ADMIN_USER, _bcrypt.hashpw(ADMIN_PASS.encode(), _bcrypt.gensalt()).decode(), "admin")
         )
 
     # Seed demo user
@@ -84,7 +84,7 @@ def init_db():
     if not existing_demo:
         conn.execute(
             "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
-            (DEMO_USER, pwd_ctx.hash(DEMO_PASS), "demo")
+            (DEMO_USER, _bcrypt.hashpw(DEMO_PASS.encode(), _bcrypt.gensalt()).decode(), "demo")
         )
 
     conn.commit()
