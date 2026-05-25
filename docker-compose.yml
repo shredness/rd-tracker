@@ -13,6 +13,7 @@ services:
       - rdtracker:/data
     environment:
       - DB_PATH=/data/sessions.db
+      - SECRET_KEY=f7K#mP2$nX9qRvL4wZ8jYtB6cHsE3uA5dGiNpW1oF0yCkVbMeQhTxJlUzDrS
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

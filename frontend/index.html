@@ -180,7 +180,30 @@
 </style>
 </head>
 <body>
-<div class="app">
+<!-- Login screen -->
+<div id="login-screen" style="display:none; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-lg); padding:32px; width:100%; max-width:360px; box-shadow:0 12px 40px rgba(0,0,0,0.3);">
+    <div style="text-align:center; margin-bottom:28px;">
+      <img src="/icon-192.png" style="width:64px; height:64px; border-radius:50%; margin-bottom:12px;">
+      <h1 style="font-size:22px; font-weight:700; margin-bottom:4px;">Prometheus</h1>
+      <p style="font-size:13px; color:var(--text2);">Relative density tracker</p>
+    </div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Username</label>
+      <input type="text" id="login-username" autocomplete="username" style="width:100%;" placeholder="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="form-group" style="margin-bottom:20px;">
+      <label>Password</label>
+      <input type="password" id="login-password" autocomplete="current-password" style="width:100%;" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="login-error" style="display:none; color:var(--red-text); font-size:13px; margin-bottom:14px; text-align:center;"></div>
+    <button class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%; padding:11px; font-size:15px;">Sign in</button>
+  </div>
+</div>
+
+<div id="login-screen-hide" style="display:none;"></div>
+
+<div class="app" id="main-app" style="display:none;">
   <div class="app-header">
     <h1>Prometheus</h1>
     <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">🌙</button>
@@ -195,6 +218,7 @@
     <button class="tab" onclick="switchTab('bank')">Exercises</button>
     <button class="tab" onclick="switchTab('progress')">Progress</button>
     <button class="tab" onclick="switchTab('export')">↓ Export</button>
+    <button class="tab" id="tab-btn-users" onclick="switchTab('users')" style="display:none;">Users</button>
   </div>
 
   <!-- LOG -->
@@ -343,8 +367,52 @@
 </div>
 
 <div class="toast" id="toast"></div>
+</div><!-- end main-app -->
 
-<!-- Add exercise modal -->
+  <!-- USERS (admin only) -->
+  <div id="tab-users" class="tab-panel">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+      <div style="font-size:13px; color:var(--text2);">Manage user accounts. Guests have full access to their own data. Demo is read-only and sees your data.</div>
+      <button class="btn btn-sm btn-primary" onclick="openNewUserModal()">+ New user</button>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:10px 14px; text-align:left; font-size:11px; font-weight:600; color:var(--text2);">Username</th>
+            <th style="padding:10px 8px; font-size:11px; font-weight:600; color:var(--text2);">Role</th>
+            <th style="padding:10px 8px; font-size:11px; font-weight:600; color:var(--text2);">Created</th>
+            <th style="padding:10px 8px; width:80px;"></th>
+          </tr>
+        </thead>
+        <tbody id="users-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+<!-- New user modal -->
+<div class="modal-overlay" id="new-user-modal" style="display:none;" onclick="if(event.target===this)closeNewUserModal()">
+  <div class="modal">
+    <h3>Create user</h3>
+    <div class="form-group" style="margin-bottom:12px;"><label>Username</label><input type="text" id="nu-username" style="width:100%;" placeholder="username"></div>
+    <div class="form-group" style="margin-bottom:12px;"><label>Password</label><input type="password" id="nu-password" style="width:100%;" placeholder="••••••••"></div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Role</label>
+      <select id="nu-role" style="width:100%;">
+        <option value="guest">Guest — own data, full access</option>
+        <option value="demo">Demo — read-only, sees admin data</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div id="nu-error" style="display:none; color:var(--red-text); font-size:13px; margin-bottom:10px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeNewUserModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmNewUser()">Create</button>
+    </div>
+  </div>
+</div>
+
+  <!-- Add exercise modal -->
 <div class="modal-overlay" id="add-ex-modal" style="display:none;" onclick="if(event.target===this)closeAddExModal()">
   <div class="modal">
     <h3>Add new exercise</h3>
@@ -410,9 +478,17 @@ let sessions = [];
 let exCount = 0, setCounts = {};
 let tC = null, wC = null;
 
+function getToken() {
+  try { return localStorage.getItem('prometheus-token'); } catch(e) { return null; }
+}
+
 async function apiFetch(path, opts={}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
   try {
-    const r = await fetch(API + path, { headers: {'Content-Type':'application/json'}, ...opts });
+    const r = await fetch(API + path, { headers, ...opts });
+    if (r.status === 401) { logout(); return; }
     if (!r.ok) throw new Error(await r.text());
     return await r.json();
   } catch(e) {
@@ -450,8 +526,27 @@ function toggleTheme() {
   try {
     const saved = localStorage.getItem('prometheus-theme');
     if (saved) applyTheme(saved);
-    else applyTheme('dark'); // default to dark if no saved preference
+    else applyTheme('dark');
   } catch(e) {}
+})();
+
+// Check for existing session on page load
+(async function bootstrap() {
+  const token = localStorage.getItem('prometheus-token');
+  if (!token) { document.getElementById('login-screen').style.display='flex'; return; }
+  try {
+    const r = await fetch(API + '/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('invalid');
+    const data = await r.json();
+    currentUser = { username: data.username, role: data.role };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    applyRoleUI();
+    await init();
+  } catch(e) {
+    localStorage.removeItem('prometheus-token');
+    document.getElementById('login-screen').style.display = 'flex';
+  }
 })();
 
 function prefillBodyweight() {
@@ -466,6 +561,80 @@ function prefillBodyweight() {
       bwEl.removeEventListener('input', clearTint);
     }, { once: true });
   }
+}
+
+// ── Auth state ───────────────────────────────────────────────
+let currentUser = null;
+
+function logout() {
+  try { localStorage.removeItem('prometheus-token'); } catch(e) {}
+  currentUser = null;
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-password').value = '';
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-btn');
+  if (!username || !password) { errEl.textContent='Enter username and password.'; errEl.style.display='block'; return; }
+  btn.innerHTML = '<span class="spinner"></span>Signing in…'; btn.disabled = true;
+  errEl.style.display = 'none';
+  try {
+    const form = new URLSearchParams({ username, password });
+    const r = await fetch(API + '/auth/login', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
+    const data = await r.json();
+    localStorage.setItem('prometheus-token', data.access_token);
+    currentUser = { username: data.username, role: data.role };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    applyRoleUI();
+    await init();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+  btn.innerHTML = 'Sign in'; btn.disabled = false;
+}
+
+function applyRoleUI() {
+  const isDemo  = currentUser?.role === 'demo';
+  const isAdmin = currentUser?.role === 'admin';
+  const names   = ['log','history','trend','bank','progress','export'];
+
+  // Demo: show only History, Trend, Progress
+  const demoHide = ['log','bank','export'];
+  names.forEach(n => {
+    const btn = document.querySelector(`.tab[onclick="switchTab('${n}')"]`);
+    if (btn) btn.style.display = (isDemo && demoHide.includes(n)) ? 'none' : '';
+  });
+
+  // Users tab: admin only
+  const usersBtn = document.getElementById('tab-btn-users');
+  if (usersBtn) usersBtn.style.display = isAdmin ? '' : 'none';
+
+  // Add logout + username to header
+  let headerRight = document.querySelector('.app-header');
+  if (headerRight && !document.getElementById('user-badge')) {
+    const badge = document.createElement('div');
+    badge.id = 'user-badge';
+    badge.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    badge.innerHTML = `
+      <span style="font-size:12px;color:var(--text2);">${currentUser.username}</span>
+      ${isDemo ? '<span style="font-size:10px;background:var(--accent-bg);color:var(--accent-text);padding:2px 7px;border-radius:20px;font-weight:600;">DEMO</span>' : ''}
+      <button class="theme-toggle" onclick="logout()" title="Sign out" style="font-size:13px;">↩</button>
+    `;
+    // Insert before theme toggle
+    const themeBtn = document.getElementById('theme-btn');
+    if (themeBtn) headerRight.insertBefore(badge, themeBtn);
+  }
+
+  // If demo, start on history tab
+  if (isDemo) switchTab('history');
 }
 
 async function init() {
@@ -489,12 +658,13 @@ async function init() {
 }
 
 function switchTab(name) {
-  const names = ['log','history','trend','bank','progress','export'];
+  const names = ['log','history','trend','bank','progress','export','users'];
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
   names.forEach(n => document.getElementById('tab-'+n).classList.toggle('active', n===name));
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
   if (name==='export') updateExportSummary();
+  if (name==='users') loadUsers();
 }
 
 function getExDef(name) {
@@ -1359,6 +1529,66 @@ async function loadProgress() {
       }
     }
   });
+}
+
+// ── Users (admin) ────────────────────────────────────────────
+async function loadUsers() {
+  const tbody = document.getElementById('users-body');
+  if (!tbody) return;
+  try {
+    const users = await apiFetch('/admin/users');
+    const roleColors = { admin:'var(--accent)', demo:'var(--text2)', guest:'var(--green)' };
+    tbody.innerHTML = users.map(u => `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:9px 14px; font-weight:500;">${u.username}</td>
+        <td style="padding:9px 8px;">
+          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--bg2);color:${roleColors[u.role]||'var(--text2)'};font-weight:600;text-transform:uppercase;">${u.role}</span>
+        </td>
+        <td style="padding:9px 8px; font-size:12px; color:var(--text2);">${u.created_at?.slice(0,10)||'—'}</td>
+        <td style="padding:9px 8px;">
+          ${u.username !== 'manny' ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${u.username}')">✕</button>` : ''}
+        </td>
+      </tr>`).join('');
+  } catch(e) {}
+}
+
+function openNewUserModal() {
+  document.getElementById('nu-username').value = '';
+  document.getElementById('nu-password').value = '';
+  document.getElementById('nu-role').value = 'guest';
+  document.getElementById('nu-error').style.display = 'none';
+  document.getElementById('new-user-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('nu-username').focus(), 100);
+}
+
+function closeNewUserModal() {
+  document.getElementById('new-user-modal').style.display = 'none';
+}
+
+async function confirmNewUser() {
+  const username = document.getElementById('nu-username').value.trim();
+  const password = document.getElementById('nu-password').value;
+  const role     = document.getElementById('nu-role').value;
+  const errEl    = document.getElementById('nu-error');
+  if (!username || !password) { errEl.textContent='Fill in all fields.'; errEl.style.display='block'; return; }
+  try {
+    await apiFetch('/admin/users', { method:'POST', body: JSON.stringify({username, password, role}) });
+    closeNewUserModal();
+    loadUsers();
+    showToast(`User "${username}" created`);
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Delete user "${username}"? Their sessions will remain in the database.`)) return;
+  try {
+    await apiFetch('/admin/users/'+username, { method:'DELETE' });
+    loadUsers();
+    showToast(`User "${username}" deleted`);
+  } catch(e) { showToast('Delete failed: '+e.message); }
 }
 
 function showToast(msg) {

@@ -1,9 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional
 import sqlite3, json, os
 from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 app = FastAPI(title="Prometheus API")
 
@@ -14,9 +17,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = os.environ.get("DB_PATH", "/data/sessions.db")
+# ── Config ────────────────────────────────────────────────────
+DB_PATH     = os.environ.get("DB_PATH", "/data/sessions.db")
+SECRET_KEY  = os.environ.get("SECRET_KEY", "prometheus-change-this-in-production")
+ALGORITHM   = "HS256"
+TOKEN_EXPIRE_DAYS = 30
+
+pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2   = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+ADMIN_USER    = "manny"
+ADMIN_PASS    = "pR0m3th3us"
+DEMO_USER     = "demo"
+DEMO_PASS     = "demo"   # intentionally weak — read-only account
 
 
+# ── DB ───────────────────────────────────────────────────────
 def get_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -26,17 +42,52 @@ def get_db():
 
 def init_db():
     conn = get_db()
+
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL UNIQUE,
-            bw REAL NOT NULL,
-            rd REAL NOT NULL,
-            total_density REAL NOT NULL,
-            exercises TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS users (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            username   TEXT NOT NULL UNIQUE,
+            hashed_pw  TEXT NOT NULL,
+            role       TEXT NOT NULL DEFAULT 'guest',
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL DEFAULT 1,
+            date          TEXT NOT NULL,
+            bw            REAL NOT NULL,
+            rd            REAL NOT NULL,
+            total_density REAL NOT NULL,
+            exercises     TEXT NOT NULL,
+            created_at    TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, date)
+        )
+    """)
+
+    # Migrate: add user_id column to existing sessions if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
+    if 'user_id' not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
+
+    # Seed admin user
+    existing = conn.execute("SELECT id FROM users WHERE username=?", (ADMIN_USER,)).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
+            (ADMIN_USER, pwd_ctx.hash(ADMIN_PASS), "admin")
+        )
+
+    # Seed demo user
+    existing_demo = conn.execute("SELECT id FROM users WHERE username=?", (DEMO_USER,)).fetchone()
+    if not existing_demo:
+        conn.execute(
+            "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
+            (DEMO_USER, pwd_ctx.hash(DEMO_PASS), "demo")
+        )
+
     conn.commit()
     conn.close()
 
@@ -44,12 +95,59 @@ def init_db():
 init_db()
 
 
+# ── Auth helpers ─────────────────────────────────────────────
+def verify_password(plain, hashed):
+    return pwd_ctx.verify(plain, hashed)
+
+def hash_password(plain):
+    return pwd_ctx.hash(plain)
+
+def create_token(data: dict):
+    payload = data.copy()
+    payload["exp"] = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_user(conn, username: str):
+    return conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+
+async def current_user(token: str = Depends(oauth2)):
+    err = HTTPException(status_code=401, detail="Invalid or expired token",
+                        headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            raise err
+    except JWTError:
+        raise err
+    conn = get_db()
+    user = get_user(conn, username)
+    conn.close()
+    if not user:
+        raise err
+    return dict(user)
+
+async def admin_only(user=Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+def data_user_id(user: dict) -> int:
+    """Demo user reads from admin (manny). Everyone else reads their own data."""
+    if user["role"] == "demo":
+        conn = get_db()
+        admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
+        conn.close()
+        return admin["id"] if admin else 1
+    return user["id"]
+
+
+# ── Models ───────────────────────────────────────────────────
 class SetData(BaseModel):
     reps: float
     rawLoad: float
     trueLbs: float
     vol: float
-
 
 class ExerciseData(BaseModel):
     name: str
@@ -61,7 +159,6 @@ class ExerciseData(BaseModel):
     mult: Optional[float] = 2.0
     isBW: Optional[bool] = False
 
-
 class SessionIn(BaseModel):
     date: str
     bw: float
@@ -69,52 +166,107 @@ class SessionIn(BaseModel):
     total_density: float
     exercises: list[ExerciseData]
 
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str = "guest"  # guest | demo | admin
 
+
+# ── Auth endpoints ────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-@app.get("/sessions")
-def get_sessions():
+@app.post("/auth/login")
+def login(form: OAuth2PasswordRequestForm = Depends()):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM sessions ORDER BY date ASC").fetchall()
+    user = get_user(conn, form.username)
     conn.close()
-    return [
-        {
-            "id": r["id"],
-            "date": r["date"],
-            "bw": r["bw"],
-            "rd": r["rd"],
-            "total_density": r["total_density"],
-            "exercises": json.loads(r["exercises"]),
-        }
-        for r in rows
-    ]
+    if not user or not verify_password(form.password, user["hashed_pw"]):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    token = create_token({"sub": user["username"], "role": user["role"]})
+    return {"access_token": token, "token_type": "bearer",
+            "role": user["role"], "username": user["username"]}
 
+@app.get("/auth/me")
+def me(user=Depends(current_user)):
+    return {"username": user["username"], "role": user["role"], "id": user["id"]}
+
+
+# ── Admin: user management ────────────────────────────────────
+@app.get("/admin/users")
+def list_users(user=Depends(admin_only)):
+    conn = get_db()
+    rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/admin/users")
+def create_user(body: UserCreate, user=Depends(admin_only)):
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Username already exists")
+    conn.execute(
+        "INSERT INTO users (username, hashed_pw, role) VALUES (?,?,?)",
+        (body.username, hash_password(body.password), body.role)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "created", "username": body.username}
+
+@app.delete("/admin/users/{username}")
+def delete_user(username: str, user=Depends(admin_only)):
+    if username in (ADMIN_USER, DEMO_USER):
+        raise HTTPException(status_code=400, detail="Cannot delete system accounts")
+    conn = get_db()
+    conn.execute("DELETE FROM users WHERE username=?", (username,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "username": username}
+
+@app.put("/admin/users/{username}/password")
+def change_password(username: str, body: dict, user=Depends(admin_only)):
+    new_pw = body.get("password", "")
+    if len(new_pw) < 4:
+        raise HTTPException(status_code=400, detail="Password too short")
+    conn = get_db()
+    conn.execute("UPDATE users SET hashed_pw=? WHERE username=?",
+                 (hash_password(new_pw), username))
+    conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+# ── Sessions ──────────────────────────────────────────────────
+@app.get("/sessions")
+def get_sessions(user=Depends(current_user)):
+    uid = data_user_id(user)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM sessions WHERE user_id=? ORDER BY date ASC", (uid,)
+    ).fetchall()
+    conn.close()
+    return [{"id": r["id"], "date": r["date"], "bw": r["bw"], "rd": r["rd"],
+             "total_density": r["total_density"],
+             "exercises": json.loads(r["exercises"])} for r in rows]
 
 @app.post("/sessions")
-def save_session(session: SessionIn):
+def save_session(session: SessionIn, user=Depends(current_user)):
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo account is read-only")
+    uid = user["id"]
     conn = get_db()
     try:
-        conn.execute(
-            """
-            INSERT INTO sessions (date, bw, rd, total_density, exercises)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(date) DO UPDATE SET
-                bw=excluded.bw,
-                rd=excluded.rd,
-                total_density=excluded.total_density,
-                exercises=excluded.exercises
-            """,
-            (
-                session.date,
-                session.bw,
-                session.rd,
-                session.total_density,
-                json.dumps([e.dict() for e in session.exercises]),
-            ),
-        )
+        conn.execute("""
+            INSERT INTO sessions (user_id, date, bw, rd, total_density, exercises)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(user_id, date) DO UPDATE SET
+                bw=excluded.bw, rd=excluded.rd,
+                total_density=excluded.total_density, exercises=excluded.exercises
+        """, (uid, session.date, session.bw, session.rd, session.total_density,
+              json.dumps([e.dict() for e in session.exercises])))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -122,20 +274,25 @@ def save_session(session: SessionIn):
     conn.close()
     return {"status": "saved", "date": session.date}
 
-
 @app.delete("/sessions/{date}")
-def delete_session(date: str):
+def delete_session(date: str, user=Depends(current_user)):
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo account is read-only")
     conn = get_db()
-    conn.execute("DELETE FROM sessions WHERE date = ?", (date,))
+    conn.execute("DELETE FROM sessions WHERE user_id=? AND date=?", (user["id"], date))
     conn.commit()
     conn.close()
     return {"status": "deleted", "date": date}
 
 
+# ── Trend ─────────────────────────────────────────────────────
 @app.get("/trend")
-def get_trend():
+def get_trend(user=Depends(current_user)):
+    uid = data_user_id(user)
     conn = get_db()
-    rows = conn.execute("SELECT date, bw, rd FROM sessions ORDER BY date ASC").fetchall()
+    rows = conn.execute(
+        "SELECT date, bw, rd FROM sessions WHERE user_id=? ORDER BY date ASC", (uid,)
+    ).fetchall()
     conn.close()
 
     by_week: dict = {}
@@ -153,61 +310,57 @@ def get_trend():
 
     result = []
     for week, entries in by_week.items():
-        avg_rd = sum(e["rd"] for e in entries) / len(entries)
-        avg_wt = sum(e["wt"] for e in entries) / len(entries)
         result.append({
             "week": week,
-            "rd": round(avg_rd, 2),
-            "wt": round(avg_wt, 1),
+            "rd":   round(sum(e["rd"] for e in entries) / len(entries), 2),
+            "wt":   round(sum(e["wt"] for e in entries) / len(entries), 1),
         })
-
     result.sort(key=lambda w: datetime.strptime(w["week"], "%m/%d/%Y"))
     return result
 
 
+# ── Progress ──────────────────────────────────────────────────
 @app.get("/progress/{exercise_name}")
-def get_progress(exercise_name: str):
-    """
-    Returns per-session data for a specific exercise:
-    date, top set load (trueLbs), total vol, density, session RD, bodyweight.
-    Useful for graphing strength progression on a single lift over time.
-    """
+def get_progress(exercise_name: str, user=Depends(current_user)):
+    uid = data_user_id(user)
     conn = get_db()
     rows = conn.execute(
-        "SELECT date, bw, rd, exercises FROM sessions ORDER BY date ASC"
+        "SELECT date, bw, rd, exercises FROM sessions WHERE user_id=? ORDER BY date ASC", (uid,)
     ).fetchall()
     conn.close()
 
     result = []
     for r in rows:
         exercises = json.loads(r["exercises"])
-        match = next((e for e in exercises if e.get("name","").lower() == exercise_name.lower()), None)
+        match = next((e for e in exercises
+                      if e.get("name","").lower() == exercise_name.lower()), None)
         if not match:
             continue
         sets = match.get("sets", [])
         if not sets:
             continue
-        top_set = max(sets, key=lambda s: s.get("trueLbs", 0))
+        top_set  = max(sets, key=lambda s: s.get("trueLbs", 0))
         total_vol = sum(s.get("vol", 0) for s in sets)
         result.append({
-            "date":      r["date"],
-            "bw":        r["bw"],
-            "rd":        r["rd"],
-            "topLoad":   round(top_set.get("trueLbs", 0), 1),
-            "topReps":   int(top_set.get("reps", 0)),
-            "totalVol":  round(total_vol, 1),
-            "density":   round(match.get("density", 0), 2),
-            "sets":      len(sets),
+            "date":     r["date"],
+            "bw":       r["bw"],
+            "rd":       r["rd"],
+            "topLoad":  round(top_set.get("trueLbs", 0), 1),
+            "topReps":  int(top_set.get("reps", 0)),
+            "totalVol": round(total_vol, 1),
+            "density":  round(match.get("density", 0), 2),
+            "sets":     len(sets),
         })
-
     return result
 
 
 @app.get("/exercises/logged")
-def get_logged_exercises():
-    """Returns a sorted list of all exercise names that have at least one logged session."""
+def get_logged_exercises(user=Depends(current_user)):
+    uid = data_user_id(user)
     conn = get_db()
-    rows = conn.execute("SELECT exercises FROM sessions").fetchall()
+    rows = conn.execute(
+        "SELECT exercises FROM sessions WHERE user_id=?", (uid,)
+    ).fetchall()
     conn.close()
     names = set()
     for r in rows:
