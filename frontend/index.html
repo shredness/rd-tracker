@@ -1069,7 +1069,8 @@ function editSession(date) {
   exCount = 0; setCounts = {};
 
   // Rebuild each exercise block from the saved session
-  (session.exercises || []).forEach(ex => {
+  console.log('editSession: rebuilding', (session.exercises||[]).length, 'exercises');
+  (session.exercises || []).forEach((ex, exIdx) => {
     const id = exCount++;
     setCounts[id] = 0;
     const opts = '<option value="">— Select exercise —</option>' +
@@ -1119,6 +1120,7 @@ function editSession(date) {
       <span class="ex-dens" id="exd-${id}"></span>
     `;
     document.getElementById('ex-container').appendChild(div);
+    console.log('editSession: appended ex-'+id, ex.name, 'sets:', (ex.sets||[]).length);
 
     // Populate sets BEFORE calling onExChange so DOM is fully ready
     const tbody = document.getElementById('sets-'+id);
@@ -1137,7 +1139,9 @@ function editSession(date) {
         <td><button class="btn btn-sm" style="padding:2px 6px;" onclick="removeSet(${id},${sid})">✕</button></td>
       `;
       if (tbody) tbody.appendChild(tr);
+      else console.warn('tbody not found for sets-'+id);
     });
+    console.log('editSession: sets appended for ex-'+id, 'tbody exists:', !!tbody);
 
     // Call onExChange after sets are in DOM
     onExChange(id);
