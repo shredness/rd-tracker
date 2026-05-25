@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RD Tracker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeece8;
+    --text: #1a1a18; --text2: #5f5e5a; --text3: #888780;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.22);
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-text: #0C447C;
+    --green: #3B6D11; --green-bg: #EAF3DE;
+    --red-text: #A32D2D; --red-bg: #FCEBEB;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #e8e6e0; --text2: #9c9a92; --text3: #6e6d67;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.2);
+      --blue-bg: #0c2d4a; --blue-text: #85b7eb;
+      --green-bg: #1a3008; --red-bg: #2d0d0d;
+    }
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); font-size: 15px; min-height: 100vh; }
+  .app { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .tab { font-size: 14px; padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); cursor: pointer; transition: all .15s; }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+  @media (max-width: 600px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+  .metric { background: var(--bg2); border-radius: var(--radius); padding: 12px 14px; }
+  .metric-label { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .metric-value { font-size: 22px; font-weight: 600; }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 12px; }
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 12px; color: var(--text2); }
+  input[type=text], input[type=number], input[type=date], select {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); padding: 7px 10px; font-size: 14px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--blue); }
+  .btn { font-size: 13px; padding: 7px 14px; border-radius: var(--radius); cursor: pointer; border: 1px solid var(--border2); background: var(--bg); color: var(--text); transition: background .1s; }
+  .btn:hover { background: var(--bg2); }
+  .btn-sm { font-size: 12px; padding: 4px 10px; }
+  .btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn-primary:hover { opacity: .85; }
+  .btn-danger { color: var(--red-text); border-color: transparent; }
+  .btn-danger:hover { background: var(--red-bg); }
+  .btn-export { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 500; }
+  .btn-export:hover { opacity: .88; }
+  .exercise-block { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+  .exercise-header { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .bw-opts { background: var(--bg2); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .bw-opts label { color: var(--text2); cursor: pointer; }
+  .sets-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+  .sets-table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--text2); padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  .sets-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .sets-table tr:last-child td { border-bottom: none; }
+  .sets-table td input { background: var(--bg2); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 4px 7px; font-size: 13px; }
+  .sets-table td input:focus { border-color: var(--blue); outline: none; }
+  .result-bar { display: flex; align-items: center; gap: 14px; padding: 14px; background: var(--bg2); border-radius: var(--radius); margin-top: 12px; flex-wrap: wrap; }
+  .rd-big { font-size: 30px; font-weight: 700; }
+  .history-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .history-item:last-child { border-bottom: none; }
+  .badge { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 7px; border-radius: 20px; gap: 2px; }
+  .badge-up { background: var(--green-bg); color: var(--green); }
+  .badge-dn { background: var(--red-bg); color: var(--red-text); }
+  .empty { text-align: center; padding: 32px; color: var(--text3); font-size: 14px; }
+  .tool-pill { display: inline-block; font-size: 10px; padding: 1px 8px; border-radius: 20px; }
+  .ex-dens { font-size: 11px; color: var(--text3); margin-left: 10px; }
+  .load-hint { font-size: 11px; color: var(--text3); font-style: italic; margin-bottom: 6px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: var(--radius); font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .api-banner { background: var(--red-bg); color: var(--red-text); padding: 8px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>RD Tracker</h1>
+  <p class="subtitle">Relative density — strength indexed to bodyweight</p>
+  <div class="api-banner" id="api-banner">⚠ Cannot reach the API. Check that the backend container is running.</div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('log')">Log workout</button>
+    <button class="tab" onclick="switchTab('history')">History</button>
+    <button class="tab" onclick="switchTab('trend')">Trend</button>
+    <button class="tab" onclick="switchTab('bank')">Exercise bank</button>
+    <button class="tab" onclick="switchTab('export')">↓ Export</button>
+  </div>
+
+  <!-- LOG -->
+  <div id="tab-log" class="tab-panel active">
+    <div class="metric-grid">
+      <div class="metric"><div class="metric-label">Avg RD</div><div class="metric-value" id="s-avg">—</div><div class="metric-sub">all sessions</div></div>
+      <div class="metric"><div class="metric-label">Last session</div><div class="metric-value" id="s-last">—</div><div class="metric-sub" id="s-last-d">—</div></div>
+      <div class="metric"><div class="metric-label">Best session</div><div class="metric-value" id="s-best">—</div><div class="metric-sub" id="s-best-d">—</div></div>
+      <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value" id="s-count">—</div><div class="metric-sub">total logged</div></div>
+    </div>
+    <div class="card">
+      <div class="section-label" style="margin-bottom:14px;">Session details</div>
+      <div class="form-row">
+        <div class="form-group"><label>Date</label><input type="date" id="sess-date" style="width:155px;"></div>
+        <div class="form-group"><label>Bodyweight (lbs)</label><input type="number" id="sess-bw" step="0.1" placeholder="199.0" style="width:115px;" oninput="calcRD()"></div>
+      </div>
+      <div class="section-label">Exercises</div>
+      <div id="ex-container"></div>
+      <button class="btn btn-sm" onclick="addExercise()" style="margin-bottom:14px;">+ Add exercise</button>
+      <div class="result-bar" id="result-bar" style="display:none;">
+        <div><div style="font-size:12px;color:var(--text2);">Session RD</div><div class="rd-big" id="result-rd">0.00</div></div>
+        <div style="flex:1;font-size:12px;color:var(--text2);" id="result-detail"></div>
+        <button class="btn btn-primary" id="save-btn" onclick="saveSession()">Save session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="tab-history" class="tab-panel">
+    <div class="card"><div id="history-list"></div></div>
+  </div>
+
+  <!-- TREND -->
+  <div id="tab-trend" class="tab-panel">
+    <div class="metric-grid">
+      <div class="metric"><div class="metric-label">Running avg RD</div><div class="metric-value" id="t-avg">—</div><div class="metric-sub">Dec 2025 – present</div></div>
+      <div class="metric"><div class="metric-label">Peak week</div><div class="metric-value" id="t-peak">—</div><div class="metric-sub" id="t-peak-d">—</div></div>
+      <div class="metric"><div class="metric-label">Avg bodyweight</div><div class="metric-value" id="t-wt">—</div><div class="metric-sub">lbs, all time</div></div>
+      <div class="metric"><div class="metric-label">4-week trend</div><div class="metric-value" id="t-dir">—</div><div class="metric-sub" id="t-dir-s">vs prior 4wk</div></div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div style="position:relative;width:100%;height:280px;">
+        <canvas id="trendChart" role="img" aria-label="RD trend over time"></canvas>
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px;">Weekly avg RD. Higher = stronger relative to bodyweight.</p>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div style="position:relative;width:100%;height:180px;">
+        <canvas id="wtChart" role="img" aria-label="Bodyweight trend"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- BANK -->
+  <div id="tab-bank" class="tab-panel">
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);">Exercise</th>
+            <th style="padding:10px 8px;font-size:11px;font-weight:600;color:var(--text2);">Tool</th>
+            <th style="padding:10px 8px;font-size:11px;font-weight:600;color:var(--text2);">Mult</th>
+            <th style="padding:10px 8px;font-size:11px;font-weight:600;color:var(--text2);">Load input</th>
+            <th style="padding:10px 8px;font-size:11px;font-weight:600;color:var(--text2);">Muscle</th>
+            <th style="padding:10px 8px;font-size:11px;font-weight:600;color:var(--text2);">Day</th>
+          </tr>
+        </thead>
+        <tbody id="bank-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- EXPORT -->
+  <div id="tab-export" class="tab-panel">
+    <div class="card" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div style="flex:1;">
+        <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Export to Excel</div>
+        <div style="font-size:13px;color:var(--text2);">Log, Trend, and ExerciseBank sheets — matching your 2026 Workouts.xlsx structure</div>
+        <div id="export-status" style="font-size:12px;margin-top:4px;"></div>
+      </div>
+      <button class="btn btn-export" id="export-btn" onclick="doExport()">↓ Download .xlsx</button>
+    </div>
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Sheet summary</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+          <th style="padding:7px 0;text-align:left;font-size:11px;font-weight:600;color:var(--text2);width:130px;">Sheet</th>
+          <th style="padding:7px 0;text-align:left;font-size:11px;font-weight:600;color:var(--text2);">Columns</th>
+          <th style="padding:7px 0;text-align:left;font-size:11px;font-weight:600;color:var(--text2);width:80px;">Rows</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 0;font-weight:500;">Log</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Date, Weight, Exercise, Load, True, Reps, Vol, Time, Density, Rel Density, Notes</td><td style="padding:8px 0;font-size:12px;color:var(--text2);" id="exp-log-ct">—</td></tr>
+          <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 0;font-weight:500;">Trend</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Week Ending, Relative Density Avg, Weekly Weight Avg (lbs)</td><td style="padding:8px 0;font-size:12px;color:var(--text2);" id="exp-trend-ct">—</td></tr>
+          <tr><td style="padding:8px 0;font-weight:500;">ExerciseBank</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Name, Alias, Tool, Multiplier, Muscle Group, Day, Load Input, Is Bodyweight</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">${EXERCISE_BANK.length} rows</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Log preview (last 5 rows)</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;" id="log-preview"></table></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+
+const EXERCISE_BANK = [
+  {name:'Conventional Deadlift', alias:'Deadlift', tool:'Bar', mult:2.0, muscle:'Legs / Back', day:'Saturday', loadHint:'lbs per side', isBW:false},
+  {name:'Bench Press', alias:'Glute Bridge Bench Press', tool:'Bar', mult:2.0, muscle:'Chest / Triceps', day:'Saturday', loadHint:'lbs per side', isBW:false},
+  {name:'Bicep Curl', alias:'Bicep Curl', tool:'Bar', mult:2.0, muscle:'Biceps', day:'Sunday', loadHint:'lbs per side', isBW:false},
+  {name:'Overhead Tricep Extension', alias:'Overhead Tricep Ext', tool:'Cable', mult:1.0, muscle:'Triceps', day:'Sunday', loadHint:'total lbs', isBW:false},
+  {name:'Bayesian Curl', alias:'Bayesian Curl', tool:'Cable', mult:2.0, muscle:'Biceps', day:'Sunday', loadHint:'lbs per side', isBW:false},
+  {name:'Pullover no sit-up', alias:'Pullover no sit-up', tool:'Cable', mult:1.0, muscle:'Core', day:'Sunday', loadHint:'total lbs', isBW:false},
+  {name:'Mixed Grip Pull ups', alias:'Mixed Grip Pull ups', tool:'Bodyweight', mult:1.0, muscle:'Back / Biceps', day:'Tuesday', loadHint:'bodyweight', isBW:true, isAssist:false},
+  {name:'Shoulder Press', alias:'Shoulder Press', tool:'Bar', mult:2.0, muscle:'Shoulders / Triceps', day:'Tuesday', loadHint:'lbs per side', isBW:false},
+  {name:'Incline Bench Press', alias:'Incline Bench Press', tool:'Cable', mult:2.0, muscle:'Chest / Triceps', day:'Wednesday', loadHint:'lbs per side', isBW:false},
+  {name:'Incline Fly', alias:'Chest Fly', tool:'Cable', mult:2.0, muscle:'Chest', day:'Wednesday', loadHint:'lbs per side', isBW:false},
+  {name:'Bent Over Row', alias:'Back Row', tool:'Bar', mult:2.0, muscle:'Back', day:'Wednesday', loadHint:'lbs per side', isBW:false},
+  {name:'Lateral Raise', alias:'Lateral Raises', tool:'Cable', mult:2.0, muscle:'Shoulders', day:'Wednesday', loadHint:'lbs per side', isBW:false},
+  {name:'Low Bar Squat', alias:'Back Squat', tool:'Bar', mult:2.0, muscle:'Legs', day:'Thursday', loadHint:'lbs per side', isBW:false},
+  {name:'KB Swings', alias:'KB Swings', tool:'Kettlebell', mult:1.0, muscle:'Legs / Back', day:'Thursday', loadHint:'total lbs', isBW:false},
+  {name:'Hanging Knee Tuck', alias:'Hanging Knee Tuck', tool:'Bodyweight', mult:0.35, muscle:'Core', day:'Mon/Fri', loadHint:'bodyweight', isBW:true, isAssist:false},
+  {name:'Assisted Pull Ups', alias:'Assisted Pull Ups', tool:'Bodyweight', mult:0.75, muscle:'Back / Biceps', day:'—', loadHint:'bodyweight', isBW:true, isAssist:true},
+  {name:'Crossover Rear Delt Fly', alias:'Incline Reverse Fly', tool:'Cable', mult:2.0, muscle:'Shoulders / Back', day:'—', loadHint:'lbs per side', isBW:false},
+  {name:'Upright Row', alias:'Upright Row', tool:'Bar', mult:2.0, muscle:'Shoulders / Back', day:'—', loadHint:'lbs per side', isBW:false},
+  {name:'Goblet Squat', alias:'Goblet Squat', tool:'Kettlebell', mult:1.0, muscle:'Legs', day:'—', loadHint:'total lbs', isBW:false},
+  {name:'KB Front Squat', alias:'KB Front Squat', tool:'Kettlebell', mult:1.0, muscle:'Legs', day:'—', loadHint:'total lbs', isBW:false},
+  {name:'KB Step-up', alias:'KB Step Ups', tool:'Kettlebell', mult:1.0, muscle:'Legs / Core', day:'—', loadHint:'total lbs', isBW:false},
+  {name:"Farmer's Walk", alias:"Farmer's Walk", tool:'Kettlebell', mult:1.0, muscle:'Core', day:'—', loadHint:'total lbs', isBW:false},
+  {name:'Pullover to sit-up', alias:'Core', tool:'Kettlebell', mult:1.0, muscle:'Core', day:'—', loadHint:'total lbs', isBW:false},
+  {name:'Hanging Leg Raise', alias:'Hanging Leg Raises', tool:'Bodyweight', mult:0.50, muscle:'Core', day:'—', loadHint:'bodyweight', isBW:true, isAssist:false},
+];
+
+let sessions = [];
+let exCount = 0, setCounts = {};
+let tC = null, wC = null;
+
+async function apiFetch(path, opts={}) {
+  try {
+    const r = await fetch(API + path, { headers: {'Content-Type':'application/json'}, ...opts });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  } catch(e) {
+    document.getElementById('api-banner').style.display = 'block';
+    throw e;
+  }
+}
+
+async function init() {
+  document.getElementById('sess-date').value = new Date().toISOString().slice(0,10);
+  try {
+    sessions = await apiFetch('/sessions');
+    document.getElementById('api-banner').style.display = 'none';
+  } catch(e) { sessions = []; }
+  renderBankTable();
+  updateStats();
+  renderHistory();
+  addExercise();
+  updateExportSummary();
+}
+
+function switchTab(name) {
+  const names = ['log','history','trend','bank','export'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
+  names.forEach(n => document.getElementById('tab-'+n).classList.toggle('active', n===name));
+  if (name==='trend') renderTrend();
+  if (name==='export') updateExportSummary();
+}
+
+function getExDef(name) {
+  return EXERCISE_BANK.find(e=>e.name===name) || {tool:'Bar',mult:2.0,loadHint:'lbs per side',isBW:false};
+}
+
+function addExercise() {
+  const id = exCount++;
+  setCounts[id] = 0;
+  const opts = EXERCISE_BANK.map(e=>`<option value="${e.name}">${e.name}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'exercise-block'; div.id = 'ex-'+id;
+  div.innerHTML = `
+    <div class="exercise-header">
+      <div class="form-group" style="flex:1;min-width:180px;"><label>Exercise</label><select id="exn-${id}" onchange="onExChange(${id})" style="width:100%;">${opts}</select></div>
+      <div class="form-group" style="width:90px;"><label>Time (min)</label><input type="number" id="ext-${id}" value="10" min="1" step="1" oninput="calcRD()"></div>
+      <button class="btn btn-danger btn-sm" onclick="removeEx(${id})" style="margin-bottom:1px;">✕</button>
+    </div>
+    <div id="bwopts-${id}" style="display:none;" class="bw-opts">
+      <span id="bwlbl-${id}" style="font-weight:600;font-size:12px;"></span>
+      <label><input type="radio" name="bwm-${id}" value="normal" checked onchange="onBWMode(${id})"> Standard</label>
+      <label><input type="radio" name="bwm-${id}" value="vest" onchange="onBWMode(${id})"> + Vest</label>
+      <label id="assist-lbl-${id}" style="display:none;"><input type="radio" name="bwm-${id}" value="assist" onchange="onBWMode(${id})"> Assisted (band)</label>
+      <div id="bwextra-${id}" style="display:none;align-items:center;gap:6px;">
+        <label id="bwextra-lbl-${id}" style="color:var(--text2);font-size:12px;"></label>
+        <input type="number" id="bwextra-val-${id}" step="0.5" placeholder="0" style="width:70px;" oninput="calcRD()">
+        <span style="font-size:12px;color:var(--text2);">lbs</span>
+      </div>
+    </div>
+    <div id="loadhint-${id}" class="load-hint"></div>
+    <table class="sets-table">
+      <thead><tr>
+        <th style="width:30px;">#</th>
+        <th id="loadhdr-${id}">Load (lbs)</th>
+        <th style="width:64px;">Reps</th>
+        <th style="width:84px;">Vol (lbs)</th>
+        <th style="width:30px;"></th>
+      </tr></thead>
+      <tbody id="sets-${id}"></tbody>
+    </table>
+    <button class="btn btn-sm" onclick="addSet(${id})">+ Set</button>
+    <span class="ex-dens" id="exd-${id}"></span>
+  `;
+  document.getElementById('ex-container').appendChild(div);
+  onExChange(id);
+  addSet(id); addSet(id);
+  calcRD();
+}
+
+function onExChange(id) {
+  const def = getExDef(document.getElementById('exn-'+id).value);
+  const bwopts = document.getElementById('bwopts-'+id);
+  if (def.isBW) {
+    bwopts.style.display = 'flex';
+    document.getElementById('bwlbl-'+id).textContent = def.tool+' × '+def.mult;
+    document.getElementById('assist-lbl-'+id).style.display = def.isAssist ? 'inline' : 'none';
+    document.querySelector(`input[name="bwm-${id}"][value="normal"]`).checked = true;
+    document.getElementById('bwextra-'+id).style.display = 'none';
+    document.getElementById('loadhdr-'+id).textContent = 'Load (BW × '+def.mult+')';
+    document.getElementById('loadhint-'+id).textContent = 'Auto from bodyweight. Enter reps only.';
+  } else {
+    bwopts.style.display = 'none';
+    document.getElementById('loadhdr-'+id).textContent = 'Load ('+def.loadHint+')';
+    document.getElementById('loadhint-'+id).textContent = def.tool+' · ×'+def.mult+(def.mult===2?  ' (per side → True lbs)':' (used as-is)');
+  }
+  calcRD();
+}
+
+function onBWMode(id) {
+  const mode = document.querySelector(`input[name="bwm-${id}"]:checked`).value;
+  const extra = document.getElementById('bwextra-'+id);
+  const lbl = document.getElementById('bwextra-lbl-'+id);
+  if (mode==='vest') { extra.style.display='flex'; lbl.textContent='Vest weight:'; }
+  else if (mode==='assist') { extra.style.display='flex'; lbl.textContent='Band assistance (subtract):'; }
+  else { extra.style.display='none'; }
+  calcRD();
+}
+
+function removeEx(id) { document.getElementById('ex-'+id)?.remove(); calcRD(); }
+
+function addSet(exId) {
+  const sid = setCounts[exId]++;
+  const def = getExDef(document.getElementById('exn-'+exId)?.value);
+  const tr = document.createElement('tr');
+  tr.id = `s-${exId}-${sid}`;
+  tr.innerHTML = `
+    <td style="font-size:11px;color:var(--text3);">${sid+1}</td>
+    <td><input type="number" id="l-${exId}-${sid}" step="0.5" placeholder="${def.isBW?'auto':'0'}" style="width:${def.isBW?62:78}px;" oninput="calcRD()" ${def.isBW?'disabled':''}></td>
+    <td><input type="number" id="r-${exId}-${sid}" step="1" placeholder="0" style="width:58px;" oninput="calcRD()"></td>
+    <td style="font-size:12px;color:var(--text2);" id="v-${exId}-${sid}">—</td>
+    <td><button class="btn btn-sm" style="padding:2px 6px;" onclick="removeSet(${exId},${sid})">✕</button></td>
+  `;
+  document.getElementById('sets-'+exId).appendChild(tr);
+}
+
+function removeSet(exId, sid) { document.getElementById(`s-${exId}-${sid}`)?.remove(); calcRD(); }
+
+function effBW(id, bw) {
+  const mode = document.querySelector(`input[name="bwm-${id}"]:checked`)?.value||'normal';
+  const extra = parseFloat(document.getElementById('bwextra-val-'+id)?.value)||0;
+  return mode==='vest' ? bw+extra : mode==='assist' ? Math.max(0,bw-extra) : bw;
+}
+
+function calcRD() {
+  const bw = parseFloat(document.getElementById('sess-bw')?.value)||0;
+  let totalDensity = 0; const lines = [];
+  document.querySelectorAll('.exercise-block').forEach(block => {
+    const id = block.id.replace('ex-','');
+    const def = getExDef(document.getElementById('exn-'+id)?.value||'');
+    const time = parseFloat(document.getElementById('ext-'+id)?.value)||10;
+    let exVol = 0;
+    block.querySelectorAll('tbody tr').forEach(tr => {
+      const [,exId,sid] = tr.id.split('-');
+      const reps = parseFloat(document.getElementById(`r-${exId}-${sid}`)?.value)||0;
+      const vEl = document.getElementById(`v-${exId}-${sid}`);
+      if (!reps) { if(vEl) vEl.textContent='—'; return; }
+      let trueLbs;
+      if (def.isBW && bw>0) { trueLbs = effBW(id,bw)*def.mult; }
+      else { const l=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0; if(!l){if(vEl)vEl.textContent='—';return;} trueLbs=l*def.mult; }
+      const vol = trueLbs*reps; exVol+=vol;
+      if(vEl) vEl.textContent=vol.toFixed(0)+' lbs';
+    });
+    if (exVol>0) {
+      const d=exVol/time; totalDensity+=d;
+      const de=document.getElementById('exd-'+id); if(de) de.textContent=d.toFixed(0)+' lbs/min';
+      lines.push((document.getElementById('exn-'+id)?.value||'').split(' ').slice(0,2).join(' ')+': '+d.toFixed(0));
+    } else { const de=document.getElementById('exd-'+id); if(de) de.textContent=''; }
+  });
+  const rb=document.getElementById('result-bar');
+  if (totalDensity>0&&bw>0) {
+    const rd=totalDensity/bw;
+    rb.style.display='flex';
+    document.getElementById('result-rd').textContent=rd.toFixed(2);
+    document.getElementById('result-detail').innerHTML=lines.map(l=>`<span style="display:inline-block;margin-right:10px;margin-bottom:3px;">${l} lbs/min</span>`).join('');
+  } else rb.style.display='none';
+}
+
+async function saveSession() {
+  const date = document.getElementById('sess-date').value;
+  const bw = parseFloat(document.getElementById('sess-bw').value)||0;
+  if (!date||!bw) { showToast('Enter date and bodyweight.'); return; }
+  const blocks = document.querySelectorAll('.exercise-block');
+  let totalDensity=0; const exData=[];
+  blocks.forEach(block=>{
+    const id=block.id.replace('ex-','');
+    const name=document.getElementById('exn-'+id)?.value||'';
+    const def=getExDef(name);
+    const time=parseFloat(document.getElementById('ext-'+id)?.value)||10;
+    let exVol=0; const sets=[];
+    block.querySelectorAll('tbody tr').forEach(tr=>{
+      const [,exId,sid]=tr.id.split('-');
+      const reps=parseFloat(document.getElementById(`r-${exId}-${sid}`)?.value)||0;
+      if(!reps) return;
+      let trueLbs,rawLoad;
+      if(def.isBW){const eb=effBW(id,bw);trueLbs=eb*def.mult;rawLoad=eb;}
+      else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;trueLbs=rawLoad*def.mult;}
+      const vol=trueLbs*reps; exVol+=vol;
+      sets.push({reps,rawLoad,trueLbs,vol});
+    });
+    if(exVol>0){const d=exVol/time;totalDensity+=d;exData.push({name,time,sets,totalVol:exVol,density:d,tool:def.tool,mult:def.mult,isBW:def.isBW});}
+  });
+  if(!exData.length){showToast('Add at least one exercise with reps.');return;}
+  const rd=totalDensity/bw;
+  const btn=document.getElementById('save-btn');
+  btn.innerHTML='<span class="spinner"></span>Saving…'; btn.disabled=true;
+  try {
+    await apiFetch('/sessions',{method:'POST',body:JSON.stringify({date,bw,rd,total_density:totalDensity,exercises:exData})});
+    sessions=await apiFetch('/sessions');
+    updateStats(); renderHistory(); updateExportSummary();
+    document.getElementById('ex-container').innerHTML='';
+    exCount=0; setCounts={};
+    addExercise(); document.getElementById('result-bar').style.display='none';
+    showToast(`Session saved — RD ${rd.toFixed(2)}`);
+    switchTab('history');
+  } catch(e) { showToast('Save failed: '+e.message); }
+  btn.innerHTML='Save session'; btn.disabled=false;
+}
+
+function updateStats() {
+  if(!sessions.length){return;}
+  const rds=sessions.map(s=>s.rd);
+  document.getElementById('s-avg').textContent=(rds.reduce((a,v)=>a+v,0)/rds.length).toFixed(2);
+  const last=sessions[sessions.length-1];
+  document.getElementById('s-last').textContent=last.rd.toFixed(2);
+  document.getElementById('s-last-d').textContent=last.date;
+  const best=sessions.reduce((b,s)=>s.rd>b.rd?s:b);
+  document.getElementById('s-best').textContent=best.rd.toFixed(2);
+  document.getElementById('s-best-d').textContent=best.date;
+  document.getElementById('s-count').textContent=sessions.length;
+}
+
+function renderHistory() {
+  const list=document.getElementById('history-list');
+  if(!sessions.length){list.innerHTML='<div class="empty">No sessions logged yet.</div>';return;}
+  list.innerHTML=[...sessions].reverse().map((s,i,arr)=>{
+    const prev=arr[i+1];
+    let badge='';
+    if(prev){const d=s.rd-prev.rd;if(Math.abs(d)>0.01)badge=d>0?`<span class="badge badge-up">▲ ${Math.abs(d).toFixed(2)}</span>`:`<span class="badge badge-dn">▼ ${Math.abs(d).toFixed(2)}</span>`;}
+    return `<div class="history-item">
+      <div style="font-size:12px;color:var(--text2);width:88px;flex-shrink:0;">${s.date}</div>
+      <div style="font-size:18px;font-weight:700;width:54px;flex-shrink:0;">${s.rd.toFixed(2)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(s.exercises||[]).map(e=>e.name).join(', ')}</div>
+        <div style="font-size:11px;color:var(--text3);">${s.bw} lbs</div>
+      </div>${badge}
+    </div>`;
+  }).join('');
+}
+
+async function renderTrend() {
+  let trendData=[];
+  try { trendData=await apiFetch('/trend'); } catch(e){return;}
+  const labels=trendData.map(d=>d.week.replace('/2025','').replace('/2026',''));
+  const rdV=trendData.map(d=>+d.rd.toFixed(2));
+  const wtV=trendData.map(d=>+d.wt.toFixed(1));
+  const avg=rdV.reduce((a,v)=>a+v,0)/rdV.length;
+  document.getElementById('t-avg').textContent=avg.toFixed(2);
+  const pk=trendData.reduce((b,d)=>d.rd>b.rd?d:b);
+  document.getElementById('t-peak').textContent=pk.rd.toFixed(2);
+  document.getElementById('t-peak-d').textContent=pk.week;
+  document.getElementById('t-wt').textContent=(wtV.reduce((a,v)=>a+v,0)/wtV.length).toFixed(1);
+  if(rdV.length>=8){const r=rdV.slice(-4).reduce((a,v)=>a+v,0)/4,p=rdV.slice(-8,-4).reduce((a,v)=>a+v,0)/4,dir=r-p;document.getElementById('t-dir').textContent=(dir>=0?'+':'')+dir.toFixed(2);document.getElementById('t-dir-s').textContent=dir>=0?'▲ improving':'▼ declining';}
+  if(tC)tC.destroy();
+  tC=new Chart(document.getElementById('trendChart'),{type:'line',data:{labels,datasets:[
+    {label:'RD',data:rdV,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,0.08)',tension:.35,fill:true,pointRadius:3,borderWidth:2},
+    {label:'Avg',data:rdV.map(()=>+avg.toFixed(2)),borderColor:'#888780',borderDash:[4,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},maxRotation:45,autoSkip:true,maxTicksLimit:12},grid:{display:false}},y:{min:1.2,ticks:{font:{size:11},callback:v=>v.toFixed(1)},grid:{color:'rgba(128,128,128,0.1)'}}}}});
+  if(wC)wC.destroy();
+  wC=new Chart(document.getElementById('wtChart'),{type:'line',data:{labels,datasets:[
+    {label:'lbs',data:wtV,borderColor:'#3B6D11',backgroundColor:'rgba(59,109,17,0.07)',tension:.35,fill:true,pointRadius:3,borderWidth:2}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},maxRotation:45,autoSkip:true,maxTicksLimit:12},grid:{display:false}},y:{ticks:{font:{size:11},callback:v=>v.toFixed(0)+' lbs'},grid:{color:'rgba(128,128,128,0.1)'}}}}});
+}
+
+function renderBankTable() {
+  const tc={Bar:'#B5D4F4',Cable:'#C0DD97',Kettlebell:'#FAC775',Bodyweight:'#F4C0D1'};
+  const tt={Bar:'#0C447C',Cable:'#3B6D11',Kettlebell:'#633806',Bodyweight:'#993556'};
+  document.getElementById('bank-body').innerHTML=EXERCISE_BANK.map(e=>{
+    const mc=e.mult===2?'#B5D4F4':e.mult===1?'#C0DD97':'#FAC775';
+    const mt=e.mult===2?'#0C447C':e.mult===1?'#3B6D11':'#633806';
+    const ld=e.isBW?'BW × '+e.mult+(e.isAssist?' (− assist)':' (+ vest opt)'):e.loadHint;
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:9px 14px;font-weight:500;">${e.name}<br><span style="font-size:11px;font-weight:400;color:var(--text3);">${e.alias}</span></td>
+      <td style="padding:9px 8px;"><span class="tool-pill" style="background:${tc[e.tool]||'#ddd'};color:${tt[e.tool]||'#333'};">${e.tool}</span></td>
+      <td style="padding:9px 8px;"><span class="tool-pill" style="background:${mc};color:${mt};">×${e.mult}</span></td>
+      <td style="padding:9px 8px;font-size:12px;color:var(--text2);">${ld}</td>
+      <td style="padding:9px 8px;font-size:12px;color:var(--text2);">${e.muscle}</td>
+      <td style="padding:9px 8px;font-size:12px;color:var(--text3);">${e.day}</td>
+    </tr>`;
+  }).join('');
+}
+
+function buildLogRows() {
+  const rows=[];
+  sessions.forEach(s=>{
+    (s.exercises||[]).forEach(ex=>{
+      (ex.sets||[]).forEach(set=>{
+        rows.push({'Date':s.date,'Weight (lbs)':s.bw,'Exercise':ex.name,'Load (lbs)':+set.rawLoad.toFixed(1),'True (lbs)':+set.trueLbs.toFixed(1),'Reps':set.reps,'Vol (lbs)':+set.vol.toFixed(1),'Time (min)':ex.time,'Density':+(set.vol/ex.time).toFixed(2),'Rel Density':+s.rd.toFixed(2),'Notes':''});
+      });
+    });
+  });
+  return rows;
+}
+
+async function buildTrendRows() {
+  try {
+    const t=await apiFetch('/trend');
+    return t.map(d=>({'Week Ending':d.week,'Relative Density Avg':d.rd,'Weekly Weight Avg (lbs)':d.wt}));
+  } catch(e) { return []; }
+}
+
+function buildBankRows() {
+  return EXERCISE_BANK.map(e=>({'Name':e.name,'Alias':e.alias,'Tool':e.tool,'Multiplier':e.mult,'Muscle Group':e.muscle,'Day':e.day,'Load Input':e.loadHint,'Is Bodyweight':e.isBW?'Yes':'No'}));
+}
+
+async function updateExportSummary() {
+  const lr=buildLogRows();
+  document.getElementById('exp-log-ct').textContent=lr.length+' rows';
+  try { const tr=await buildTrendRows(); document.getElementById('exp-trend-ct').textContent=tr.length+' rows'; } catch(e){}
+  const cols=['Date','Weight (lbs)','Exercise','Load (lbs)','True (lbs)','Reps','Vol (lbs)','Time (min)','Density','Rel Density'];
+  const table=document.getElementById('log-preview');
+  const preview=lr.slice(-5);
+  if(!preview.length){table.innerHTML='<tr><td colspan="10" style="padding:12px;font-size:12px;color:var(--text3);text-align:center;">Log sessions to see preview</td></tr>';return;}
+  table.innerHTML=`<thead><tr style="border-bottom:1px solid var(--border);">${cols.map(c=>`<th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);white-space:nowrap;">${c}</th>`).join('')}</tr></thead>`+
+    `<tbody>${preview.map(r=>`<tr style="border-bottom:1px solid var(--border);">${cols.map(c=>`<td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+async function doExport() {
+  const btn=document.getElementById('export-btn');
+  const st=document.getElementById('export-status');
+  btn.innerHTML='<span class="spinner"></span>Building…'; btn.disabled=true;
+  try {
+    const XLSX=window.XLSX;
+    const wb=XLSX.utils.book_new();
+    const lr=buildLogRows();
+    const wsL=XLSX.utils.json_to_sheet(lr.length?lr:[{'Date':'','Weight (lbs)':'','Exercise':'','Load (lbs)':'','True (lbs)':'','Reps':'','Vol (lbs)':'','Time (min)':'','Density':'','Rel Density':'','Notes':''}]);
+    wsL['!cols']=[12,13,24,12,12,8,12,11,10,12,18].map(w=>({wch:w}));
+    const tr=await buildTrendRows();
+    const wsT=XLSX.utils.json_to_sheet(tr);
+    wsT['!cols']=[14,22,24].map(w=>({wch:w}));
+    const br=buildBankRows();
+    const wsB=XLSX.utils.json_to_sheet(br);
+    wsB['!cols']=[26,26,12,12,20,14,18,14].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,wsL,'Log');
+    XLSX.utils.book_append_sheet(wb,wsT,'Trend');
+    XLSX.utils.book_append_sheet(wb,wsB,'ExerciseBank');
+    const today=new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb,`RD_Tracker_${today}.xlsx`);
+    st.textContent=`✓ Downloaded RD_Tracker_${today}.xlsx`;
+    st.style.color='var(--green)';
+  } catch(e) { st.textContent='Export failed: '+e.message; st.style.color='var(--red-text)'; }
+  btn.innerHTML='↓ Download .xlsx'; btn.disabled=false;
+}
+
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+init();
+</script>
+</body>
+</html>
