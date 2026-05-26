@@ -1495,7 +1495,7 @@ async function confirmMusclePicker() {
   await saveBankRowToAPI(ex);
   closeMusclePicker();
   renderBankTable();
-  renderExerciseDropdowns();
+  rebuildExerciseDropdowns();
 }
 
 async function loadBankFromAPI() {
@@ -1636,7 +1636,8 @@ function updateBankField(idx, field, val) {
     else e.loadHint = 'lbs per side';
   }
 
-  saveBankRowToAPI(EXERCISE_BANK[idx]);
+  clearTimeout(window._bankSaveTimer);
+  window._bankSaveTimer = setTimeout(() => saveBankRowToAPI(EXERCISE_BANK[idx]), 600);
   rebuildExerciseDropdowns();
   // Re-render the whole table so mult/isBW fields and formula preview update
   renderBankTable();
