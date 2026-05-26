@@ -476,13 +476,19 @@ def update_exercise(ex_name: str, body: ExerciseIn, user=Depends(current_user)):
     if user["role"] not in ("admin", "guest"):
         raise HTTPException(status_code=403, detail="Read-only account")
     conn = get_db()
-    conn.execute(
+    result = conn.execute(
         "UPDATE exercises SET alias=?, tool=?, mult=?, muscles=?, day=?, load_hint=?, is_bw=?, sort_order=? WHERE name=?",
         (body.alias, body.tool, body.mult, json.dumps(body.muscles),
          body.day, body.load_hint, int(body.is_bw), body.sort_order, ex_name))
+    if result.rowcount == 0:
+        # Doesn't exist — insert it
+        conn.execute(
+            "INSERT INTO exercises (name, alias, tool, mult, muscles, day, load_hint, is_bw, sort_order) VALUES (?,?,?,?,?,?,?,?,?)",
+            (ex_name, body.alias, body.tool, body.mult, json.dumps(body.muscles),
+             body.day, body.load_hint, int(body.is_bw), body.sort_order))
     conn.commit()
     conn.close()
-    return {"status": "updated"}
+    return {"status": "upserted"}
 
 @app.delete("/exercises/bank/{ex_name}")
 def delete_exercise(ex_name: str, user=Depends(current_user)):

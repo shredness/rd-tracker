@@ -1639,16 +1639,17 @@ function updateBankField(idx, field, val) {
   }
 
   const exToSave = EXERCISE_BANK[idx];
-  // If name field just changed and this was a new exercise, do a POST
+  // If name field just changed and this was a new exercise, clear new flag
   if (field === 'name' && exToSave._isNew && val && val !== 'New Exercise') {
     exToSave._isNew = false;
   }
+  if (exToSave._isNew) return; // don't save placeholder
+  // Capture snapshot now to avoid stale index issues
+  const exSnapshot = {...exToSave};
   clearTimeout(window._bankSaveTimer);
   window._bankSaveTimer = setTimeout(() => {
-    const ex = EXERCISE_BANK[idx];
-    if (ex._isNew) return; // don't save until name is set
-    saveBankRowToAPI(ex);
-  }, 600);
+    saveBankRowToAPI(exSnapshot).catch(err => console.error('Bank save failed:', err));
+  }, 800);
   rebuildExerciseDropdowns();
   // Re-render the whole table so mult/isBW fields and formula preview update
   renderBankTable();
@@ -1669,19 +1670,8 @@ async function saveBankRowToAPI(ex) {
     mult: ex.mult||2.0, muscles, day: ex.day||'',
     load_hint: ex.loadHint||'', is_bw: !!ex.isBW, sort_order: ex.sortOrder||0
   };
-  // Check if exists in DB by trying PUT; if 404/error, POST instead
-  try {
-    const resp = await fetch(API+'/exercises/bank/'+encodeURIComponent(ex.name), {
-      method:'PUT', headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
-      body:JSON.stringify(payload)
-    });
-    if (!resp.ok) {
-      // Doesn't exist yet — create it
-      await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)});
-    }
-  } catch(e) {
-    try { await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)}); } catch(e2) {}
-  }
+  // PUT always upserts (backend inserts if not exists)
+  await apiFetch('/exercises/bank/'+encodeURIComponent(ex.name), {method:'PUT', body:JSON.stringify(payload)});
 }
 
 async function deleteBankExerciseFromAPI(name) {
