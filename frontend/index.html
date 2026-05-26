@@ -1503,6 +1503,7 @@ async function loadBankFromAPI() {
   try {
     const data = await apiFetch('/exercises/bank');
     if (Array.isArray(data) && data.length > 0) {
+      console.log('loadBankFromAPI: loading', data.length, 'exercises');
       EXERCISE_BANK.length = 0;
       data.forEach(e => EXERCISE_BANK.push({
         name: e.name, alias: e.alias||e.name, tool: e.tool||'Bar',
@@ -1512,7 +1513,7 @@ async function loadBankFromAPI() {
     } else if (Array.isArray(data) && data.length === 0) {
       await seedBankToAPI();
     }
-  } catch(e) { console.warn('Bank load failed'); }
+  } catch(e) { console.error('Bank load failed:', e); }
 }
 
 async function seedBankToAPI() {
