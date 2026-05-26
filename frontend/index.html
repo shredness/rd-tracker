@@ -1450,14 +1450,32 @@ function openMusclePicker(idx) {
   const ex = EXERCISE_BANK[idx];
   const selected = getMusclesArray(ex);
   const container = document.getElementById('muscle-chip-container');
-  container.innerHTML = MUSCLE_GROUPS.map(m =>
-    `<div class="muscle-chip${selected.includes(m)?' selected':''}" onclick="toggleMuscleChip(this,'${m}')">${m}</div>`
-  ).join('');
+  container.innerHTML = MUSCLE_GROUPS.map(m => {
+    const sel = selected.includes(m);
+    const c = MUSCLE_COLORS[m] || {};
+    const style = sel ? `background:${c.border||'var(--accent)'};border-color:${c.border||'var(--accent)'};color:#fff;` : `background:${c.bg||'var(--bg2)'};border-color:${c.border||'var(--border)'};color:${c.text||'var(--text2)'};`;
+    return `<div class="muscle-chip${sel?' selected':''}" style="${style}" onclick="toggleMuscleChipColored(this,'${m}')">${m}</div>`;
+  }).join('');
   document.getElementById('muscle-picker-modal').style.display = 'flex';
 }
 
 function toggleMuscleChip(el, name) {
   el.classList.toggle('selected');
+}
+
+function toggleMuscleChipColored(el, name) {
+  const sel = !el.classList.contains('selected');
+  el.classList.toggle('selected', sel);
+  const c = MUSCLE_COLORS[name] || {};
+  if (sel) {
+    el.style.background = c.border || 'var(--accent)';
+    el.style.borderColor = c.border || 'var(--accent)';
+    el.style.color = '#fff';
+  } else {
+    el.style.background = c.bg || 'var(--bg2)';
+    el.style.borderColor = c.border || 'var(--border)';
+    el.style.color = c.text || 'var(--text2)';
+  }
 }
 
 function closeMusclePicker() {
@@ -1657,10 +1675,28 @@ function getMusclesArray(e) {
   return [];
 }
 
+const MUSCLE_COLORS = {
+  'Chest':      {bg:'#3B1F2B', border:'#C2185B', text:'#F48FB1'},
+  'Back':       {bg:'#1A2744', border:'#1565C0', text:'#90CAF9'},
+  'Shoulders':  {bg:'#1F2A1A', border:'#2E7D32', text:'#A5D6A7'},
+  'Biceps':     {bg:'#2A1F3D', border:'#6A1B9A', text:'#CE93D8'},
+  'Triceps':    {bg:'#2D1B0E', border:'#E65100', text:'#FFCC80'},
+  'Legs':       {bg:'#1A2733', border:'#00838F', text:'#80DEEA'},
+  'Glutes':     {bg:'#2A2000', border:'#F57F17', text:'#FFF176'},
+  'Core':       {bg:'#1C1C1C', border:'#546E7A', text:'#B0BEC5'},
+  'Calves':     {bg:'#1A2520', border:'#00695C', text:'#80CBC4'},
+  'Full Body':  {bg:'#1F1A10', border:'#BF8F00', text:'#FFE082'},
+};
+
+function muscleTagStyle(m) {
+  const c = MUSCLE_COLORS[m] || {bg:'var(--bg2)', border:'var(--border)', text:'var(--text2)'};
+  return `background:${c.bg};border:1px solid ${c.border};color:${c.text};`;
+}
+
 function getMuscleTagsHtml(e) {
   const arr = getMusclesArray(e);
   if (!arr.length) return '<span style="font-size:11px;color:var(--text3);">+ add</span>';
-  return arr.map(m => `<span class="muscle-tag">${m}</span>`).join('');
+  return arr.map(m => `<span class="muscle-tag" style="${muscleTagStyle(m)}">${m}</span>`).join('');
 }
 
 function renderBankTable() {
@@ -1819,9 +1855,12 @@ function toggleNewExMusclePicker() {
   if (!picker) return;
   if (picker.style.display === 'none') {
     const existing = [...document.querySelectorAll('#new-ex-muscle-picker .muscle-chip.selected')].map(el=>el.textContent.trim());
-    picker.innerHTML = MUSCLE_GROUPS.map(m =>
-      `<div class="muscle-chip${existing.includes(m)?' selected':''}" onclick="event.stopPropagation();toggleMuscleChip(this,'${m}');updateNewExMusclePlaceholder()">${m}</div>`
-    ).join('');
+    picker.innerHTML = MUSCLE_GROUPS.map(m => {
+      const sel = existing.includes(m);
+      const c = MUSCLE_COLORS[m] || {};
+      const style = sel ? `background:${c.border||'var(--accent)'};border-color:${c.border||'var(--accent)'};color:#fff;` : `background:${c.bg||'var(--bg2)'};border-color:${c.border||'var(--border)'};color:${c.text||'var(--text2)'};`;
+      return `<div class="muscle-chip${sel?' selected':''}" style="${style}" onclick="event.stopPropagation();toggleMuscleChipColored(this,'${m}');updateNewExMusclePlaceholder()">${m}</div>`;
+    }).join('');
     picker.style.display = 'flex';
   } else {
     picker.style.display = 'none';
