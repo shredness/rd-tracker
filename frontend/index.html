@@ -778,7 +778,7 @@ function addExercise() {
       <label><input type="radio" name="bwm-${id}" value="assist" onchange="onBWMode(${id})"> Assisted</label>
       <div id="bwextra-${id}" style="display:none;align-items:center;gap:6px;">
         <label id="bwextra-lbl-${id}" style="color:var(--text2);font-size:12px;"></label>
-        <input type="number" id="bwextra-val-${id}" step="1" min="0" max="99" placeholder="0" style="width:60px;" oninput="calcRD()">
+        <input type="number" id="bwextra-val-${id}" step="1" min="0" max="99" placeholder="0" style="width:60px;" oninput="updateBWLoadFields(${id});calcRD()">
         <span id="bwextra-unit-${id}" style="font-size:12px;color:var(--text2);">lbs</span>
       </div>
     </div>
@@ -868,10 +868,12 @@ function updateBWLoadFields(id) {
   if (!def.isBW) return;
   const eff = effBW(id, bw);
   const trueLbs = eff * def.mult;
-  document.querySelectorAll(`[id^="l-${id}-"]`).forEach(el => {
-    el.value = trueLbs.toFixed(1);
-    el.style.color = 'var(--text3)';
-  });
+  // Iterate known set count to avoid prefix collisions
+  const count = setCounts[id] || 0;
+  for (let s = 0; s < count; s++) {
+    const el = document.getElementById(`l-${id}-${s}`);
+    if (el) { el.value = trueLbs.toFixed(1); el.style.color = 'var(--text3)'; }
+  }
 }
 
 function onBWMode(id) {
@@ -967,11 +969,7 @@ function calcRD() {
       const vEl = document.getElementById(`v-${exId}-${sid}`);
       if (!reps) { if(vEl) vEl.textContent='—'; return; }
       let trueLbs;
-      if (def.isBW && bw>0) {
-        const displayedLoad = parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;
-        const eb = displayedLoad > 0 ? displayedLoad / def.mult : effBW(id, bw);
-        trueLbs = eb * def.mult;
-      }
+      if (def.isBW && bw>0) { trueLbs = effBW(id,bw)*def.mult; }
       else { const l=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0; if(!l){if(vEl)vEl.textContent='—';return;} const vtm=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):''; if(def.tool==='Bar'&&vtm==='standard'){const bwt2=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=l+bwt2;}else{trueLbs=l*(def.tool==='Bar'?2.0:def.mult);} }
       const vol = trueLbs*reps;
       exVol += vol;
@@ -1012,13 +1010,7 @@ async function saveSession() {
       const setTime=parseFloat(document.getElementById(`t-${exId}-${sid}`)?.value)||2;
       if(!reps) return;
       let trueLbs,rawLoad;
-      if(def.isBW){
-        // Prefer the pre-calculated value in the (disabled) load field set by updateBWLoadFields
-        const displayedLoad = parseFloat(document.getElementById(`l-${id}-${sid}`)?.value)||0;
-        const eb = displayedLoad > 0 ? displayedLoad / def.mult : effBW(id,bw);
-        trueLbs = eb * def.mult;
-        rawLoad = eb;
-      }
+      if(def.isBW){const eb=effBW(id,bw);trueLbs=eb*def.mult;rawLoad=eb;}
       else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;const vtm2=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):'';if(def.tool==='Bar'&&vtm2==='standard'){const bwt=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=rawLoad+bwt;}else{trueLbs=rawLoad*(def.tool==='Bar'?2.0:def.mult);}}
       const vol=trueLbs*reps;
       exVol+=vol;
@@ -1168,7 +1160,7 @@ function editSession(date) {
         <label><input type="radio" name="bwm-${id}" value="assist" onchange="onBWMode(${id})"> Assisted</label>
         <div id="bwextra-${id}" style="display:none;align-items:center;gap:6px;">
           <label id="bwextra-lbl-${id}" style="color:var(--text2);font-size:12px;"></label>
-          <input type="number" id="bwextra-val-${id}" step="1" min="0" max="99" placeholder="0" style="width:60px;" oninput="calcRD()">
+          <input type="number" id="bwextra-val-${id}" step="1" min="0" max="99" placeholder="0" style="width:60px;" oninput="updateBWLoadFields(${id});calcRD()">
           <span id="bwextra-unit-${id}" style="font-size:12px;color:var(--text2);">lbs</span>
         </div>
       </div>
