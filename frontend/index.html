@@ -1501,6 +1501,7 @@ async function confirmMusclePicker() {
 async function loadBankFromAPI() {
   try {
     const data = await apiFetch('/exercises/bank');
+    console.log('loadBankFromAPI response:', Array.isArray(data), data?.length);
     if (Array.isArray(data) && data.length > 0) {
       EXERCISE_BANK.length = 0;
       data.forEach(e => EXERCISE_BANK.push({
