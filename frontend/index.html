@@ -742,6 +742,7 @@ function getExDef(name) {
 }
 
 function addExercise() {
+  console.trace('addExercise called, exCount='+exCount);
   const id = exCount++;
   setCounts[id] = 0;
   const opts = '<option value="">— Select exercise —</option>' + EXERCISE_BANK.map(e=>`<option value="${e.name}">${e.name}</option>`).join('') + '<option value="__add_new__" style="color:var(--blue);font-weight:500;">+ Add new exercise…</option>';
