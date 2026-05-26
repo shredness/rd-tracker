@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#7A5C2E" id="theme-color-meta">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>prometheus@savo.us</title>
+<title>Prometheus</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -234,7 +234,7 @@
       <div class="section-label" style="margin-bottom:14px;">Session details</div>
       <div class="form-row">
         <div class="form-group"><label>Date</label><input type="date" id="sess-date" style="width:155px;"></div>
-        <div class="form-group"><label>Bodyweight (lbs)</label><input type="number" id="sess-bw" step="0.1" placeholder="199.0" style="width:115px;" oninput="calcRD()"></div>
+        <div class="form-group"><label>Bodyweight (lbs)</label><input type="number" id="sess-bw" step="0.1" placeholder="199.0" style="width:115px;" oninput="calcRD();document.querySelectorAll('.exercise-block').forEach(b=>updateBWLoadFields(b.id.replace('ex-','')))"></div>
       </div>
       <div class="section-label">Exercises</div>
       <div id="ex-container"></div>
@@ -836,12 +836,13 @@ function onExChange(id) {
     document.getElementById('bwextra-'+id).style.display = 'none';
     document.getElementById('loadhdr-'+id).textContent = 'Load (BW × '+def.mult+')';
     document.getElementById('loadhint-'+id).textContent = 'Auto from bodyweight. Enter reps only.';
+    setTimeout(() => updateBWLoadFields(id), 50);
   } else if (def.tool === 'Bar') {
     bwopts.style.display = 'none';
     if (vtopts) vtopts.style.display = 'flex';
     document.querySelector(`input[name="vtm-${id}"][value="vitruvian"]`).checked = true;
     document.getElementById('loadhdr-'+id).textContent = 'Load (lbs per side)';
-    document.getElementById('loadhint-'+id).textContent = 'Bar · Vitruvian = ×2 per side · Standard = ×2 per side + bar weight';
+    document.getElementById('loadhint-'+id).textContent = 'Bar · Vitruvian = ×2 per side · Standard = total plates + bar weight';
     onBarMode(id);
   } else {
     bwopts.style.display = 'none';
@@ -853,6 +854,20 @@ function onExChange(id) {
     document.getElementById('loadhint-'+id).textContent = hint;
   }
   calcRD();
+}
+
+function updateBWLoadFields(id) {
+  // For BW exercises, write the effective load into each disabled load field
+  const bw = parseFloat(document.getElementById('sess-bw')?.value)||0;
+  if (!bw) return;
+  const def = getExDef(document.getElementById('exn-'+id)?.value||'');
+  if (!def.isBW) return;
+  const eff = effBW(id, bw);
+  const trueLbs = eff * def.mult;
+  document.querySelectorAll(`[id^="l-${id}-"]`).forEach(el => {
+    el.value = trueLbs.toFixed(1);
+    el.style.color = 'var(--text3)';
+  });
 }
 
 function onBWMode(id) {
@@ -874,6 +889,7 @@ function onBWMode(id) {
   } else {
     extra.style.display='none';
   }
+  updateBWLoadFields(id);
   calcRD();
 }
 
@@ -881,6 +897,16 @@ function onBarMode(id) {
   const mode = document.querySelector(`input[name="vtm-${id}"]:checked`)?.value || 'vitruvian';
   const barWtDiv = document.getElementById('barwt-'+id);
   if (barWtDiv) barWtDiv.style.display = mode === 'standard' ? 'flex' : 'none';
+  // Update load column header and hint to match mode
+  const loadHdr = document.getElementById('loadhdr-'+id);
+  const loadHint = document.getElementById('loadhint-'+id);
+  if (mode === 'standard') {
+    if (loadHdr) loadHdr.textContent = 'Load (total plates)';
+    if (loadHint) loadHint.textContent = 'Bar · Standard = total plates + bar weight = True lbs';
+  } else {
+    if (loadHdr) loadHdr.textContent = 'Load (lbs per side)';
+    if (loadHint) loadHint.textContent = 'Bar · Vitruvian = ×2 per side · Standard = total plates + bar weight';
+  }
   calcRD();
 }
 
@@ -927,7 +953,7 @@ function calcRD() {
       if (!reps) { if(vEl) vEl.textContent='—'; return; }
       let trueLbs;
       if (def.isBW && bw>0) { trueLbs = effBW(id,bw)*def.mult; }
-      else { const l=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0; if(!l){if(vEl)vEl.textContent='—';return;} const vtm=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):''; if(def.tool==='Bar'&&vtm==='standard'){const bwt2=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=l*2+bwt2;}else{trueLbs=l*(def.tool==='Bar'?2.0:def.mult);} }
+      else { const l=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0; if(!l){if(vEl)vEl.textContent='—';return;} const vtm=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):''; if(def.tool==='Bar'&&vtm==='standard'){const bwt2=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=l+bwt2;}else{trueLbs=l*(def.tool==='Bar'?2.0:def.mult);} }
       const vol = trueLbs*reps;
       exVol += vol;
       exTime += setTime;
@@ -968,7 +994,7 @@ async function saveSession() {
       if(!reps) return;
       let trueLbs,rawLoad;
       if(def.isBW){const eb=effBW(id,bw);trueLbs=eb*def.mult;rawLoad=eb;}
-      else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;const vtm2=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):'';if(def.tool==='Bar'&&vtm2==='standard'){const bwt=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=rawLoad*2+bwt;}else{trueLbs=rawLoad*(def.tool==='Bar'?2.0:def.mult);}}
+      else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;const vtm2=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):'';if(def.tool==='Bar'&&vtm2==='standard'){const bwt=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=rawLoad+bwt;}else{trueLbs=rawLoad*(def.tool==='Bar'?2.0:def.mult);}}
       const vol=trueLbs*reps;
       exVol+=vol;
       exDensity+=vol/setTime;
@@ -1324,7 +1350,7 @@ function bankFormulaHint(e) {
     const pct = e.mult === 0.35 ? '35%' : e.mult === 0.5 ? '50%' : e.mult === 0.75 ? '75%' : (e.mult*100)+'%';
     return `BW × ${pct} · vest/assist options at log time`;
   }
-  if (e.tool === 'Bar') return `(load/side × 2) or (load/side × 2) + bar wt`;
+  if (e.tool === 'Bar') return `Vitruvian: load/side × 2  ·  Standard: total plates + bar weight`;
   if (e.tool === 'Dumbbell') return `load/side × 2 (each hand)`;
   if (e.tool === 'Machine') return `load × 1 (stack as entered)`;
   if (e.tool === 'Cable') return e.mult === 2.0 ? `load/side × 2` : `load × 1 (single stack)`;
@@ -1505,7 +1531,7 @@ function updateNewExFormula() {
   const isBW = document.getElementById('new-ex-isbw').value === 'true';
   const el = document.getElementById('new-ex-formula');
   if (isBW) el.textContent = `Formula: BW × ${mult} · vest/assist options at log time`;
-  else if (tool === 'Bar') el.textContent = `Formula: (load/side × 2) or (load/side × 2) + bar weight`;
+  else if (tool === 'Bar') el.textContent = `Formula: Vitruvian = load/side × 2  ·  Standard = total plates + bar weight`;
   else if (tool === 'Cable') el.textContent = mult === 2.0 ? `Formula: load/side × 2` : `Formula: load × 1 (single stack)`;
   else if (tool === 'Dumbbell') el.textContent = `Formula: load/side × 2 (each hand)`;
   else if (tool === 'Machine') el.textContent = `Formula: load × 1 (stack as entered)`;
