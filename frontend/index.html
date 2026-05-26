@@ -1010,7 +1010,7 @@ async function saveSession() {
       const setTime=parseFloat(document.getElementById(`t-${exId}-${sid}`)?.value)||2;
       if(!reps) return;
       let trueLbs,rawLoad;
-      if(def.isBW){const eb=effBW(id,bw);trueLbs=eb*def.mult;rawLoad=eb;}
+      if(def.isBW){const eb=effBW(id,bw);console.log('saveSession BW: id='+id+' bw='+bw+' eb='+eb+' mode='+document.querySelector(`input[name="bwm-${id}"]:checked`)?.value+' vestVal='+document.getElementById('bwextra-val-'+id)?.value);trueLbs=eb*def.mult;rawLoad=eb;}
       else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;const vtm2=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):'';if(def.tool==='Bar'&&vtm2==='standard'){const bwt=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=rawLoad+bwt;}else{trueLbs=rawLoad*(def.tool==='Bar'?2.0:def.mult);}}
       const vol=trueLbs*reps;
       exVol+=vol;
