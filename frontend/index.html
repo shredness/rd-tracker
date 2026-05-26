@@ -704,6 +704,9 @@ function applyRoleUI() {
 }
 
 async function init() {
+  // Reset exercise container so multiple init() calls don't stack blocks
+  document.getElementById('ex-container').innerHTML = '';
+  exCount = 0; setCounts = {};
   document.getElementById('sess-date').value = new Date().toISOString().slice(0,10);
   try {
     const fetched = await apiFetch('/sessions');
