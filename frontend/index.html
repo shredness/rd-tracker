@@ -1575,9 +1575,9 @@ async function resetBank() {
 }
 
 async function addBankRow() {
-  const newEx = {name:'New Exercise',alias:'',tool:'Bar',mult:2.0,muscles:[],muscle:'',day:'—',loadHint:'lbs per side',isBW:false};
+  const newEx = {name:'New Exercise',alias:'',tool:'Bar',mult:2.0,muscles:[],muscle:'',day:'—',loadHint:'lbs per side',isBW:false,_isNew:true};
   EXERCISE_BANK.push(newEx);
-  await saveBankRowToAPI(newEx);
+  // Don't save placeholder — wait until user sets a real name
   renderBankTable();
   rebuildExerciseDropdowns();
   // Scroll to and focus the new name cell
@@ -1590,10 +1590,11 @@ async function addBankRow() {
   }
 }
 
-function deleteBankRow(idx) {
+async function deleteBankRow(idx) {
   if (EXERCISE_BANK.length <= 1) { showToast('Cannot delete the last exercise.'); return; }
+  const ex = EXERCISE_BANK[idx];
+  await deleteBankExerciseFromAPI(ex.name);
   EXERCISE_BANK.splice(idx, 1);
-  saveBank();
   renderBankTable();
   rebuildExerciseDropdowns();
 }
@@ -1637,8 +1638,17 @@ function updateBankField(idx, field, val) {
     else e.loadHint = 'lbs per side';
   }
 
+  const exToSave = EXERCISE_BANK[idx];
+  // If name field just changed and this was a new exercise, do a POST
+  if (field === 'name' && exToSave._isNew && val && val !== 'New Exercise') {
+    exToSave._isNew = false;
+  }
   clearTimeout(window._bankSaveTimer);
-  window._bankSaveTimer = setTimeout(() => saveBankRowToAPI(EXERCISE_BANK[idx]), 600);
+  window._bankSaveTimer = setTimeout(() => {
+    const ex = EXERCISE_BANK[idx];
+    if (ex._isNew) return; // don't save until name is set
+    saveBankRowToAPI(ex);
+  }, 600);
   rebuildExerciseDropdowns();
   // Re-render the whole table so mult/isBW fields and formula preview update
   renderBankTable();
@@ -1659,11 +1669,18 @@ async function saveBankRowToAPI(ex) {
     mult: ex.mult||2.0, muscles, day: ex.day||'',
     load_hint: ex.loadHint||'', is_bw: !!ex.isBW, sort_order: ex.sortOrder||0
   };
+  // Check if exists in DB by trying PUT; if 404/error, POST instead
   try {
-    // Try update first, then insert
-    await apiFetch('/exercises/bank/'+encodeURIComponent(ex.name), {method:'PUT', body:JSON.stringify(payload)});
+    const resp = await fetch(API+'/exercises/bank/'+encodeURIComponent(ex.name), {
+      method:'PUT', headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
+      body:JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      // Doesn't exist yet — create it
+      await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)});
+    }
   } catch(e) {
-    await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)});
+    try { await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)}); } catch(e2) {}
   }
 }
 
