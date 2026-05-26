@@ -322,13 +322,29 @@
       </div>
     </div>
     <div class="card" style="padding:16px;" id="progress-load-card">
-      <div class="section-label" style="margin-bottom:10px;">Top set — True lbs over time</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <span class="section-label" style="margin-bottom:0;">Top set &amp; estimated 1RM over time</span>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text2);">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:2px;background:var(--accent);border-radius:2px;"></span>Top set</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed var(--text3);"></span>Est. 1RM</span>
+        </div>
+      </div>
       <div style="position:relative;width:100%;height:260px;">
         <canvas id="progressLoadChart" role="img" aria-label="Top set load over time"></canvas>
       </div>
     </div>
+    <div class="card" style="padding:16px;" id="progress-pr-card">
+      <div class="section-label" style="margin-bottom:12px;">Personal records by rep count</div>
+      <div id="progress-pr-table" style="overflow-x:auto;"></div>
+    </div>
     <div class="card" style="padding:16px;" id="progress-vol-card">
-      <div class="section-label" style="margin-bottom:10px;">Session volume (lbs) over time</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <span class="section-label" style="margin-bottom:0;">Session volume over time</span>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text2);">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:10px;background:var(--chart-wt);opacity:0.7;border-radius:2px;"></span>Volume</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed var(--text3);"></span>4wk avg</span>
+        </div>
+      </div>
       <div style="position:relative;width:100%;height:200px;">
         <canvas id="progressVolChart" role="img" aria-label="Session volume over time"></canvas>
       </div>
@@ -1526,18 +1542,26 @@ async function loadProgress() {
     statsEl.innerHTML = '<span style="font-size:13px;color:var(--text3);">No data for this exercise yet.</span>';
     if (progressLoadChart) { progressLoadChart.destroy(); progressLoadChart = null; }
     if (progressVolChart)  { progressVolChart.destroy();  progressVolChart  = null; }
+    document.getElementById('progress-pr-table').innerHTML = '';
     return;
   }
 
-  // Stats pills
-  const loads  = data.map(d => d.topLoad);
-  const vols   = data.map(d => d.totalVol);
-  const maxLoad = Math.max(...loads);
+  // ── Helpers ──
+  const epley1RM = (load, reps) => reps === 1 ? load : load * (1 + reps / 30);
+
+  const loads   = data.map(d => d.topLoad);
+  const repsArr = data.map(d => d.topReps);
+  const orm     = data.map((d,i) => Math.round(epley1RM(loads[i], repsArr[i])));
+  const vols    = data.map(d => d.totalVol);
+
+  // ── Stats pills ──
+  const maxLoad     = Math.max(...loads);
   const maxLoadDate = data.find(d => d.topLoad === maxLoad)?.date || '';
-  const avgLoad = loads.reduce((a,v)=>a+v,0)/loads.length;
-  const sessions = data.length;
-  const recent4  = loads.slice(-4);
-  const prior4   = loads.slice(-8,-4);
+  const max1RM      = Math.max(...orm);
+  const max1RMDate  = data[orm.indexOf(max1RM)]?.date || '';
+  const avgLoad     = loads.reduce((a,v)=>a+v,0)/loads.length;
+  const sessionCount = data.length;
+  const recent4 = loads.slice(-4), prior4 = loads.slice(-8,-4);
   let trend = '—';
   if (recent4.length >= 2 && prior4.length >= 2) {
     const r = recent4.reduce((a,v)=>a+v,0)/recent4.length;
@@ -1547,9 +1571,9 @@ async function loadProgress() {
   }
 
   statsEl.innerHTML = [
-    ['Sessions', sessions],
+    ['Sessions', sessionCount],
     ['Peak load', maxLoad.toFixed(1) + ' lbs<br><span style="font-size:10px;color:var(--text3);">' + maxLoadDate + '</span>'],
-    ['Avg top set', avgLoad.toFixed(1) + ' lbs'],
+    ['Est. 1RM', max1RM + ' lbs<br><span style="font-size:10px;color:var(--text3);">' + max1RMDate + '</span>'],
     ['4wk trend', trend],
   ].map(([label, val]) => `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;min-width:100px;">
@@ -1557,65 +1581,142 @@ async function loadProgress() {
       <div style="font-size:16px;font-weight:700;color:var(--text);">${val}</div>
     </div>`).join('');
 
-  const labels = data.map(d => d.date.slice(5)); // MM-DD
-  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7A5C2E';
-  const wtColor     = getComputedStyle(document.documentElement).getPropertyValue('--chart-wt').trim() || '#4A7A2E';
+  // ── PR table: best set per rep count ──
+  const prByReps = {};
+  data.forEach((d, i) => {
+    const r = d.topReps;
+    if (!prByReps[r] || loads[i] > prByReps[r].load) {
+      prByReps[r] = { load: loads[i], orm: orm[i], date: d.date };
+    }
+  });
+  const prRows = Object.entries(prByReps)
+    .sort((a,b) => parseInt(a[0]) - parseInt(b[0]))
+    .slice(0, 10); // max 10 rep counts
 
-  // Load chart
+  document.getElementById('progress-pr-table').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="padding:7px 10px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);">Reps</th>
+        <th style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--text3);">Best load</th>
+        <th style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--text3);">Est. 1RM</th>
+        <th style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--text3);">Date</th>
+      </tr></thead>
+      <tbody>
+        ${prRows.map(([reps, pr]) => `
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 10px;font-weight:600;color:var(--accent);">${reps}RM</td>
+            <td style="padding:7px 10px;">${pr.load.toFixed(1)} lbs</td>
+            <td style="padding:7px 10px;color:var(--text2);">${pr.orm} lbs</td>
+            <td style="padding:7px 10px;font-size:12px;color:var(--text3);">${pr.date}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // ── 4-week rolling average for volume ──
+  const volMA = vols.map((_, i) => {
+    const window = vols.slice(Math.max(0, i-3), i+1);
+    return Math.round(window.reduce((a,v)=>a+v,0) / window.length);
+  });
+
+  const labels = data.map(d => d.date.slice(5));
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#E05A20';
+  const wtColor     = getComputedStyle(document.documentElement).getPropertyValue('--chart-wt').trim() || '#6AAA40';
+  const text3Color  = getComputedStyle(document.documentElement).getPropertyValue('--text3').trim() || '#5A5650';
+
+  // ── Load chart: top set + 1RM estimate ──
   if (progressLoadChart) progressLoadChart.destroy();
   progressLoadChart = new Chart(document.getElementById('progressLoadChart'), {
     type: 'line',
     data: {
       labels,
-      datasets: [{
-        label: 'Top set (True lbs)',
-        data: loads,
-        borderColor: accentColor,
-        backgroundColor: accentColor + '18',
-        tension: 0.3,
-        fill: true,
-        pointRadius: 4,
-        pointBackgroundColor: accentColor,
-        borderWidth: 2,
-      }]
+      datasets: [
+        {
+          label: 'Top set',
+          data: loads,
+          borderColor: accentColor,
+          backgroundColor: accentColor + '15',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4,
+          pointBackgroundColor: accentColor,
+          borderWidth: 2,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Est. 1RM',
+          data: orm,
+          borderColor: text3Color,
+          borderDash: [4, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.3,
+          yAxisID: 'y',
+        }
+      ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y.toFixed(1)} lbs · ${data[ctx.dataIndex].topReps} reps` } }
+        tooltip: { callbacks: {
+          label: ctx => ctx.datasetIndex === 0
+            ? ` Top set: ${ctx.parsed.y.toFixed(1)} lbs × ${data[ctx.dataIndex].topReps} reps`
+            : ` Est. 1RM: ${ctx.parsed.y} lbs`
+        }}
       },
       scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { display: false } },
-        y: { ticks: { font: { size: 11 }, callback: v => v.toFixed(0) + ' lbs' }, grid: { color: 'rgba(128,128,128,0.08)' } }
+        x: { ticks: { font:{size:10}, maxRotation:45, autoSkip:true, maxTicksLimit:14 }, grid:{display:false} },
+        y: { ticks: { font:{size:11}, callback: v => v.toFixed(0)+' lbs' }, grid:{color:'rgba(128,128,128,0.08)'} }
       }
     }
   });
 
-  // Volume chart
+  // ── Volume chart: bars + 4wk moving average ──
   if (progressVolChart) progressVolChart.destroy();
   progressVolChart = new Chart(document.getElementById('progressVolChart'), {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        label: 'Volume (lbs)',
-        data: vols,
-        backgroundColor: wtColor + 'aa',
-        borderColor: wtColor,
-        borderWidth: 1,
-        borderRadius: 4,
-      }]
+      datasets: [
+        {
+          label: 'Volume',
+          data: vols,
+          backgroundColor: wtColor + '99',
+          borderColor: wtColor,
+          borderWidth: 1,
+          borderRadius: 3,
+          order: 2,
+        },
+        {
+          label: '4wk avg',
+          data: volMA,
+          type: 'line',
+          borderColor: text3Color,
+          borderDash: [4, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.4,
+          order: 1,
+        }
+      ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y.toFixed(0)} lbs · ${data[ctx.dataIndex].sets} sets` } }
+        tooltip: { callbacks: {
+          label: ctx => ctx.datasetIndex === 0
+            ? ` Vol: ${ctx.parsed.y.toFixed(0)} lbs · ${data[ctx.dataIndex].sets} sets`
+            : ` 4wk avg: ${ctx.parsed.y.toFixed(0)} lbs`
+        }}
       },
       scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { display: false } },
-        y: { ticks: { font: { size: 11 }, callback: v => (v/1000).toFixed(0) + 'k' }, grid: { color: 'rgba(128,128,128,0.08)' } }
+        x: { ticks: { font:{size:10}, maxRotation:45, autoSkip:true, maxTicksLimit:14 }, grid:{display:false} },
+        y: { ticks: { font:{size:11}, callback: v => (v/1000).toFixed(1)+'k' }, grid:{color:'rgba(128,128,128,0.08)'} }
       }
     }
   });
