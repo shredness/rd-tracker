@@ -251,7 +251,27 @@
 
   <!-- HISTORY -->
   <div id="tab-history" class="tab-panel">
-    <div class="card"><div id="history-list"></div></div>
+    <div class="card" style="padding:14px 16px;margin-bottom:8px;">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px;">
+          <label>From</label>
+          <input type="date" id="hist-from" style="width:100%;" oninput="renderHistory()">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:140px;">
+          <label>To</label>
+          <input type="date" id="hist-to" style="width:100%;" oninput="renderHistory()">
+        </div>
+        <div class="form-group" style="margin:0;flex:2;min-width:160px;">
+          <label>Exercise</label>
+          <select id="hist-exercise" style="width:100%;" onchange="renderHistory()">
+            <option value="">All exercises</option>
+          </select>
+        </div>
+        <button class="btn btn-sm" onclick="clearHistoryFilters()" style="margin-bottom:1px;">Clear</button>
+      </div>
+      <div id="hist-count" style="font-size:12px;color:var(--text2);margin-top:8px;"></div>
+    </div>
+    <div class="card" style="padding:0;"><div id="history-list"></div></div>
   </div>
 
   <!-- TREND -->
@@ -740,6 +760,7 @@ async function init() {
   renderBankTable();
   updateStats();
   renderHistory();
+  populateHistoryExerciseFilter();
   addExercise();
   if (currentUser) updateExportSummary();
   prefillBodyweight();
@@ -750,6 +771,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
   names.forEach(n => document.getElementById('tab-'+n).classList.toggle('active', n===name));
   if (name==='log') { const sg=document.getElementById('workout-stats'); if(sg) sg.style.display=''; }
+  if (name==='history') populateHistoryExerciseFilter();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
   if (name==='export') updateExportSummary();
@@ -1057,17 +1079,56 @@ function updateStats() {
   document.getElementById('s-count').textContent=sessions.length;
 }
 
+function populateHistoryExerciseFilter() {
+  const sel = document.getElementById('hist-exercise');
+  if (!sel) return;
+  const current = sel.value;
+  const names = [...new Set(sessions.flatMap(s => (s.exercises||[]).map(e => e.name)))].sort();
+  sel.innerHTML = '<option value="">All exercises</option>' +
+    names.map(n => `<option value="${n}"${n===current?' selected':''}>${n}</option>`).join('');
+}
+
+function clearHistoryFilters() {
+  document.getElementById('hist-from').value = '';
+  document.getElementById('hist-to').value = '';
+  document.getElementById('hist-exercise').value = '';
+  renderHistory();
+}
+
 function renderHistory() {
   const list = document.getElementById('history-list');
   if (!sessions.length) { list.innerHTML = '<div class="empty">No sessions logged yet.</div>'; return; }
+
+  // Apply filters
+  const from = document.getElementById('hist-from')?.value || '';
+  const to   = document.getElementById('hist-to')?.value || '';
+  const exFilter = document.getElementById('hist-exercise')?.value || '';
+
+  let filtered = [...sessions].reverse();
+  if (from) filtered = filtered.filter(s => s.date >= from);
+  if (to)   filtered = filtered.filter(s => s.date <= to);
+  if (exFilter) filtered = filtered.filter(s => (s.exercises||[]).some(e => e.name === exFilter));
+
+  const countEl = document.getElementById('hist-count');
+  if (countEl) {
+    const total = sessions.length;
+    const shown = filtered.length;
+    countEl.textContent = shown < total ? `Showing ${shown} of ${total} sessions` : `${total} sessions`;
+  }
+
+  if (!filtered.length) { list.innerHTML = '<div class="empty" style="padding:20px;">No sessions match the current filters.</div>'; return; }
+
   // Re-apply demo restrictions after re-render
   if (currentUser?.role === 'demo') {
     setTimeout(() => {
       document.querySelectorAll('.history-actions').forEach(el => el.style.display = 'none');
     }, 50);
   }
-  list.innerHTML = [...sessions].reverse().map((s, i, arr) => {
-    const prev = arr[i+1];
+  list.innerHTML = filtered.map((s, i, arr) => {
+    // Compare against the previous session in the full dataset (not filtered)
+    const allReversed = [...sessions].reverse();
+    const fullIdx = allReversed.findIndex(x => x.date === s.date);
+    const prev = allReversed[fullIdx + 1];
     let badge = '';
     if (prev) {
       const d = s.rd - prev.rd;
