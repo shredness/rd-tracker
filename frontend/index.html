@@ -155,6 +155,10 @@
   @media (max-width: 600px) { .history-actions { opacity: 1; } }
   .confirm-bar { background: var(--red-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-top: 6px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--red-text); }
   .confirm-bar .btn-sm { font-size: 12px; }
+  .muscle-tag { display:inline-block; background:var(--bg2); border:1px solid var(--border); border-radius:20px; padding:2px 8px; font-size:11px; color:var(--text2); font-weight:500; }
+  .muscle-chip { display:inline-flex; align-items:center; gap:4px; background:var(--bg2); border:1px solid var(--border); border-radius:20px; padding:4px 12px; font-size:12px; color:var(--text2); cursor:pointer; font-weight:500; transition:all .15s; }
+  .muscle-chip.selected { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .muscle-chip:hover { opacity:.8; }
   .badge { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 7px; border-radius: 20px; gap: 2px; font-weight: 600; }
   .badge-up { background: var(--green-bg); color: var(--green); }
   .badge-dn { background: var(--red-bg); color: var(--red-text); }
@@ -189,7 +193,7 @@
         <img src="icon-192.png" style="width:72px;height:72px;" onerror="this.style.display='none';this.parentNode.innerHTML='🔥';">
       </div>
       <h1 style="font-size:22px; font-weight:700; margin-bottom:4px;">Agon</h1>
-      <p style="font-size:13px; color:var(--text2);">Relative density tracker</p>
+      <p style="font-size:13px; color:var(--text2);">Relative density · strength indexed to bodyweight</p>
     </div>
     <div class="form-group" style="margin-bottom:14px;">
       <label>Username</label>
@@ -244,6 +248,7 @@
       <div class="result-bar" id="result-bar" style="display:none;">
         <div><div style="font-size:12px;color:var(--text2);">Session RD</div><div class="rd-big" id="result-rd">0.00</div></div>
         <div style="flex:1;font-size:12px;color:var(--text2);" id="result-detail"></div>
+        <button class="btn btn-sm" id="cancel-edit-btn" onclick="cancelEdit()" style="display:none;">Cancel edit</button>
         <button class="btn btn-primary" id="save-btn" onclick="saveSession()">Save session</button>
       </div>
     </div>
@@ -466,7 +471,20 @@
   </div>
 </div>
 
-  <!-- Add exercise modal -->
+  <!-- Muscle group picker modal -->
+<div class="modal-overlay" id="muscle-picker-modal" style="display:none;" onclick="if(event.target===this)closeMusclePicker()">
+  <div class="modal" style="max-width:380px;">
+    <h3>Muscle groups</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">Select all that apply for this exercise.</p>
+    <div id="muscle-chip-container" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeMusclePicker()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmMusclePicker()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add exercise modal -->
 <div class="modal-overlay" id="add-ex-modal" style="display:none;" onclick="if(event.target===this)closeAddExModal()">
   <div class="modal">
     <h3>Add new exercise</h3>
@@ -482,7 +500,13 @@
       </select>
     </div>
     <div class="form-group"><label>Multiplier</label><input type="number" id="new-ex-mult" value="2.0" step="0.05" min="0.1" style="width:100px;" oninput="updateNewExFormula()"></div>
-    <div class="form-group"><label>Muscle group</label><input type="text" id="new-ex-muscle" placeholder="e.g. Legs / Back"></div>
+    <div class="form-group">
+          <label>Muscle groups <span style="font-size:11px;color:var(--text3);">(click to select)</span></label>
+          <div id="new-ex-muscle-chips" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;" onclick="toggleNewExMusclePicker()">
+            <span style="font-size:12px;color:var(--text3);" id="new-ex-muscle-placeholder">Click to select muscle groups…</span>
+          </div>
+          <div id="new-ex-muscle-picker" style="display:none;flex-wrap:wrap;gap:6px;padding:8px;background:var(--bg2);border:1px solid var(--accent);border-radius:var(--radius);margin-top:4px;"></div>
+        </div>
     <div class="form-group" id="new-ex-bw-group" style="display:none;">
       <label>Bodyweight exercise</label>
       <select id="new-ex-isbw">
@@ -751,12 +775,8 @@ async function init() {
     sessions = Array.isArray(fetched) ? fetched : [];
     document.getElementById('api-banner').style.display = 'none';
   } catch(e) { sessions = []; }
-  // Load saved bank from localStorage if it exists
-  const savedBank = loadBank();
-  if (savedBank && savedBank.length) {
-    EXERCISE_BANK.length = 0;
-    savedBank.forEach(e => EXERCISE_BANK.push(e));
-  }
+  // Load exercise bank from API
+  await loadBankFromAPI();
   renderBankTable();
   updateStats();
   renderHistory();
@@ -770,7 +790,12 @@ function switchTab(name) {
   const names = ['log','history','trend','bank','progress','export','users'];
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
   names.forEach(n => document.getElementById('tab-'+n).classList.toggle('active', n===name));
-  if (name==='log') { const sg=document.getElementById('workout-stats'); if(sg) sg.style.display=''; }
+  if (name==='log') {
+    const sg=document.getElementById('workout-stats'); if(sg) sg.style.display='';
+    // If cancel button is visible, user clicked Workout tab during an edit — cancel it
+    const cb=document.getElementById('cancel-edit-btn');
+    if (cb && cb.style.display !== 'none') { cancelEdit(); return; }
+  }
   if (name==='history') populateHistoryExerciseFilter();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
@@ -1056,6 +1081,8 @@ async function saveSession() {
     exCount=0; setCounts={};
     addExercise(); document.getElementById('result-bar').style.display='none';
     document.getElementById('sess-bw').value = '';
+    const sg=document.getElementById('workout-stats'); if(sg) sg.style.display='';
+    const cb=document.getElementById('cancel-edit-btn'); if(cb) cb.style.display='none';
     prefillBodyweight();
     showToast(`Session saved — RD ${rd.toFixed(2)}`);
     switchTab('history');
@@ -1072,10 +1099,10 @@ function updateStats() {
   document.getElementById('s-avg-sub').textContent=recent.length ? 'last 4 weeks' : 'all sessions';
   const last=sessions[sessions.length-1];
   document.getElementById('s-last').textContent=last.rd.toFixed(2);
-  document.getElementById('s-last-d').textContent=last.date;
+  document.getElementById('s-last-d').textContent=formatDate(last.date);
   const best=sessions.reduce((b,s)=>s.rd>b.rd?s:b);
   document.getElementById('s-best').textContent=best.rd.toFixed(2);
-  document.getElementById('s-best-d').textContent=best.date;
+  document.getElementById('s-best-d').textContent=formatDate(best.date);
   document.getElementById('s-count').textContent=sessions.length;
 }
 
@@ -1137,7 +1164,7 @@ function renderHistory() {
         : `<span class="badge badge-dn">▼ ${Math.abs(d).toFixed(2)}</span>`;
     }
     return `<div class="history-item" id="hi-${s.date}">
-      <div style="font-size:12px;color:var(--text2);width:88px;flex-shrink:0;">${s.date}</div>
+      <div style="font-size:12px;color:var(--text2);width:88px;flex-shrink:0;">${formatDate(s.date)}</div>
       <div style="font-size:18px;font-weight:700;width:54px;flex-shrink:0;color:var(--accent);">${s.rd.toFixed(2)}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(s.exercises||[]).map(e=>e.name).join(', ')}</div>
@@ -1150,7 +1177,7 @@ function renderHistory() {
       </div>
     </div>
     <div id="confirm-${s.date}" style="display:none;" class="confirm-bar">
-      <span style="flex:1;">Delete session on ${s.date}? This cannot be undone.</span>
+      <span style="flex:1;">Delete session on ${formatDate(s.date)}? This cannot be undone.</span>
       <button class="btn btn-sm btn-danger" onclick="deleteSession('${s.date}')">Delete</button>
       <button class="btn btn-sm" onclick="cancelDelete('${s.date}')">Cancel</button>
     </div>`;
@@ -1179,6 +1206,26 @@ async function deleteSession(date) {
   } catch(e) { showToast('Delete failed: '+e.message); }
 }
 
+function formatDate(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-');
+  return `${m}/${d}/${y}`;
+}
+
+function cancelEdit() {
+  // Reset form to blank new-session state
+  document.getElementById('ex-container').innerHTML = '';
+  exCount = 0; setCounts = {};
+  document.getElementById('sess-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('sess-bw').value = '';
+  document.getElementById('result-bar').style.display = 'none';
+  document.getElementById('cancel-edit-btn').style.display = 'none';
+  const sg = document.getElementById('workout-stats');
+  if (sg) sg.style.display = '';
+  addExercise();
+  prefillBodyweight();
+}
+
 function editSession(date) {
   const session = sessions.find(s => s.date === date);
   if (!session) return;
@@ -1186,6 +1233,10 @@ function editSession(date) {
   // Hide stats grid while editing
   const statsGrid = document.getElementById('workout-stats');
   if (statsGrid) statsGrid.style.display = 'none';
+
+  // Show cancel button
+  const cancelBtn = document.getElementById('cancel-edit-btn');
+  if (cancelBtn) cancelBtn.style.display = '';
 
   // Switch to Workout tab and populate the form
   switchTab('log');
@@ -1388,22 +1439,86 @@ async function renderTrend() {
 
 const BANK_STORAGE_KEY = 'rd_tracker_bank_v1';
 
-function loadBank() {
+const MUSCLE_GROUPS = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Glutes','Core','Calves','Full Body'];
+
+let _musclePickerIdx = null;
+
+function openMusclePicker(idx) {
+  _musclePickerIdx = idx;
+  const ex = EXERCISE_BANK[idx];
+  const selected = Array.isArray(ex.muscles) ? ex.muscles
+    : (ex.muscle||'').split('/').map(m=>m.trim()).filter(Boolean);
+  const container = document.getElementById('muscle-chip-container');
+  container.innerHTML = MUSCLE_GROUPS.map(m =>
+    `<div class="muscle-chip${selected.includes(m)?' selected':''}" onclick="toggleMuscleChip(this,'${m}')">${m}</div>`
+  ).join('');
+  document.getElementById('muscle-picker-modal').style.display = 'flex';
+}
+
+function toggleMuscleChip(el, name) {
+  el.classList.toggle('selected');
+}
+
+function closeMusclePicker() {
+  document.getElementById('muscle-picker-modal').style.display = 'none';
+  _musclePickerIdx = null;
+}
+
+async function confirmMusclePicker() {
+  if (_musclePickerIdx === null) return;
+  const selected = [...document.querySelectorAll('#muscle-chip-container .muscle-chip.selected')]
+    .map(el => el.textContent.trim());
+  const ex = EXERCISE_BANK[_musclePickerIdx];
+  ex.muscles = selected;
+  ex.muscle = selected.join(' / ');
+  await saveBankRowToAPI(ex);
+  closeMusclePicker();
+  renderBankTable();
+  renderExerciseDropdowns();
+}
+
+async function loadBankFromAPI() {
   try {
-    const saved = localStorage.getItem(BANK_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch(e) {}
-  return null;
+    const data = await apiFetch('/exercises/bank');
+    if (Array.isArray(data) && data.length > 0) {
+      EXERCISE_BANK.length = 0;
+      data.forEach(e => EXERCISE_BANK.push({
+        name: e.name, alias: e.alias||e.name, tool: e.tool||'Bar',
+        mult: e.mult||2.0, muscles: e.muscles||[], muscle: (e.muscles||[]).join(' / '),
+        day: e.day||'', loadHint: e.loadHint||e.load_hint||'', isBW: !!e.isBW
+      }));
+    } else if (Array.isArray(data) && data.length === 0) {
+      await seedBankToAPI();
+    }
+  } catch(e) { console.warn('Bank load failed'); }
 }
 
-function saveBank() {
-  try { localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(EXERCISE_BANK)); } catch(e) {}
+async function seedBankToAPI() {
+  for (let i = 0; i < EXERCISE_BANK.length; i++) {
+    const ex = EXERCISE_BANK[i];
+    const muscles = Array.isArray(ex.muscles) ? ex.muscles
+      : (ex.muscle||'').split('/').map(m=>m.trim()).filter(Boolean);
+    try {
+      await apiFetch('/exercises/bank', { method:'POST', body: JSON.stringify({
+        name: ex.name, alias: ex.alias||ex.name, tool: ex.tool||'Bar',
+        mult: ex.mult||2.0, muscles, day: ex.day||'',
+        load_hint: ex.loadHint||'', is_bw: !!ex.isBW, sort_order: i
+      })});
+    } catch(e) {}
+  }
+  await loadBankFromAPI();
 }
 
-function resetBank() {
+function loadBank() { return null; } // legacy stub — bank now in DB
+function saveBank() {} // legacy stub
+
+async function resetBank() {
   if (!confirm('Reset exercise bank to defaults? Any custom exercises will be lost.')) return;
-  try { localStorage.removeItem(BANK_STORAGE_KEY); } catch(e) {}
-  // Reload defaults
+  // Delete all exercises from DB and re-seed
+  for (const ex of [...EXERCISE_BANK]) {
+    try { await apiFetch('/exercises/bank/'+encodeURIComponent(ex.name), {method:'DELETE'}); } catch(e) {}
+  }
+  EXERCISE_BANK.length = 0;
   const DEFAULT_BANK = [
     {name:'Conventional Deadlift',alias:'Deadlift',tool:'Bar',mult:2.0,muscle:'Legs / Back',day:'Saturday',loadHint:'lbs per side',isBW:false,isAssist:false},
     {name:'Bench Press',alias:'Glute Bridge Bench Press',tool:'Bar',mult:2.0,muscle:'Chest / Triceps',day:'Saturday',loadHint:'lbs per side',isBW:false,isAssist:false},
@@ -1430,17 +1545,17 @@ function resetBank() {
     {name:'Pullover to sit-up',alias:'Core',tool:'Kettlebell',mult:1.0,muscle:'Core',day:'—',loadHint:'total lbs',isBW:false,isAssist:false},
     {name:'Hanging Leg Raise',alias:'Hanging Leg Raises',tool:'Bodyweight',mult:0.5,muscle:'Core',day:'—',loadHint:'bodyweight',isBW:true,isAssist:false},
   ];
-  EXERCISE_BANK.length = 0;
   DEFAULT_BANK.forEach(e => EXERCISE_BANK.push(e));
+  await seedBankToAPI();
   renderBankTable();
   rebuildExerciseDropdowns();
-  showToast('Exercise reset to defaults');
+  showToast('Exercise bank reset to defaults');
 }
 
-function addBankRow() {
-  const newEx = {name:'New Exercise',alias:'',tool:'Bar',mult:2.0,muscle:'',day:'—',loadHint:'lbs per side',isBW:false,isAssist:false};
+async function addBankRow() {
+  const newEx = {name:'New Exercise',alias:'',tool:'Bar',mult:2.0,muscles:[],muscle:'',day:'—',loadHint:'lbs per side',isBW:false};
   EXERCISE_BANK.push(newEx);
-  saveBank();
+  await saveBankRowToAPI(newEx);
   renderBankTable();
   rebuildExerciseDropdowns();
   // Scroll to and focus the new name cell
@@ -1511,6 +1626,26 @@ function rebuildExerciseDropdowns() {
     const cur = sel.value;
     sel.innerHTML = EXERCISE_BANK.map(e=>`<option value="${e.name}"${e.name===cur?' selected':''}>${e.name}</option>`).join('');
   });
+}
+
+async function saveBankRowToAPI(ex) {
+  const muscles = Array.isArray(ex.muscles) ? ex.muscles
+    : (ex.muscle||'').split('/').map(m=>m.trim()).filter(Boolean);
+  const payload = {
+    name: ex.name, alias: ex.alias||ex.name, tool: ex.tool||'Bar',
+    mult: ex.mult||2.0, muscles, day: ex.day||'',
+    load_hint: ex.loadHint||'', is_bw: !!ex.isBW, sort_order: ex.sortOrder||0
+  };
+  try {
+    // Try update first, then insert
+    await apiFetch('/exercises/bank/'+encodeURIComponent(ex.name), {method:'PUT', body:JSON.stringify(payload)});
+  } catch(e) {
+    await apiFetch('/exercises/bank', {method:'POST', body:JSON.stringify(payload)});
+  }
+}
+
+async function deleteBankExerciseFromAPI(name) {
+  try { await apiFetch('/exercises/bank/'+encodeURIComponent(name), {method:'DELETE'}); } catch(e) {}
 }
 
 function renderBankTable() {
@@ -1615,7 +1750,8 @@ function openAddExModal(exBlockId) {
   document.getElementById('new-ex-name').value = '';
   document.getElementById('new-ex-tool').value = 'Bar';
   document.getElementById('new-ex-mult').value = '2.0';
-  document.getElementById('new-ex-muscle').value = '';
+  document.getElementById('new-ex-muscle-picker').style.display='none';
+  document.getElementById('new-ex-muscle-placeholder').textContent='Click to select muscle groups…';
   document.getElementById('new-ex-isbw').value = 'false';
   onNewExToolChange();
   document.getElementById('add-ex-modal').style.display = 'flex';
@@ -1623,6 +1759,11 @@ function openAddExModal(exBlockId) {
 }
 
 function closeAddExModal() {
+  // Reset muscle picker
+  const picker = document.getElementById('new-ex-muscle-picker');
+  if (picker) { picker.style.display='none'; picker.innerHTML=''; }
+  const ph = document.getElementById('new-ex-muscle-placeholder');
+  if (ph) ph.textContent='Click to select muscle groups…';
   document.getElementById('add-ex-modal').style.display = 'none';
   _addExTargetId = null;
 }
@@ -1654,17 +1795,38 @@ function updateNewExFormula() {
   else el.textContent = `Formula: load × ${mult}`;
 }
 
-function confirmAddEx() {
+function toggleNewExMusclePicker() {
+  const picker = document.getElementById('new-ex-muscle-picker');
+  if (!picker) return;
+  if (picker.style.display === 'none') {
+    const existing = [...document.querySelectorAll('#new-ex-muscle-picker .muscle-chip.selected')].map(el=>el.textContent.trim());
+    picker.innerHTML = MUSCLE_GROUPS.map(m =>
+      `<div class="muscle-chip${existing.includes(m)?' selected':''}" onclick="event.stopPropagation();toggleMuscleChip(this,'${m}');updateNewExMusclePlaceholder()">${m}</div>`
+    ).join('');
+    picker.style.display = 'flex';
+  } else {
+    picker.style.display = 'none';
+  }
+}
+
+function updateNewExMusclePlaceholder() {
+  const selected = [...document.querySelectorAll('#new-ex-muscle-picker .muscle-chip.selected')].map(el=>el.textContent.trim());
+  const ph = document.getElementById('new-ex-muscle-placeholder');
+  if (ph) ph.textContent = selected.length ? selected.join(', ') : 'Click to select muscle groups…';
+}
+
+async function confirmAddEx() {
   const name = document.getElementById('new-ex-name').value.trim();
   if (!name) { document.getElementById('new-ex-name').focus(); return; }
   const tool = document.getElementById('new-ex-tool').value;
   const mult = parseFloat(document.getElementById('new-ex-mult').value) || 1.0;
-  const muscle = document.getElementById('new-ex-muscle').value.trim();
+  const muscles = [...document.querySelectorAll('#new-ex-muscle-picker .muscle-chip.selected')].map(el=>el.textContent.trim());
+  const muscle = muscles.join(' / ');
   const isBW = document.getElementById('new-ex-isbw').value === 'true';
   const loadHint = isBW ? 'bodyweight' : (tool === 'Kettlebell' || mult === 1.0) ? 'total lbs' : 'lbs per side';
-  const newEx = { name, alias: name, tool, mult, muscle, day: '—', loadHint, isBW, isAssist: false };
+  const newEx = { name, alias: name, tool, mult, muscles, muscle, day: '—', loadHint, isBW };
   EXERCISE_BANK.push(newEx);
-  saveBank();
+  await saveBankRowToAPI(newEx);
   rebuildExerciseDropdowns();
   renderBankTable();
   // Select the new exercise in the block that triggered the modal
@@ -1717,9 +1879,9 @@ async function loadProgress() {
 
   // ── Stats pills ──
   const maxLoad     = Math.max(...loads);
-  const maxLoadDate = data.find(d => d.topLoad === maxLoad)?.date || '';
+  const maxLoadDate = formatDate(data.find(d => d.topLoad === maxLoad)?.date || '');
   const max1RM      = Math.max(...orm);
-  const max1RMDate  = data[orm.indexOf(max1RM)]?.date || '';
+  const max1RMDate  = formatDate(data[orm.indexOf(max1RM)]?.date || '');
   const avgLoad     = loads.reduce((a,v)=>a+v,0)/loads.length;
   const sessionCount = data.length;
   const recent4 = loads.slice(-4), prior4 = loads.slice(-8,-4);
@@ -1768,7 +1930,7 @@ async function loadProgress() {
             <td style="padding:7px 10px;font-weight:600;color:var(--accent);">${reps}RM</td>
             <td style="padding:7px 10px;">${pr.load.toFixed(1)} lbs</td>
             <td style="padding:7px 10px;color:var(--text2);">${pr.orm} lbs</td>
-            <td style="padding:7px 10px;font-size:12px;color:var(--text3);">${pr.date}</td>
+            <td style="padding:7px 10px;font-size:12px;color:var(--text3);">${formatDate(pr.date)}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;

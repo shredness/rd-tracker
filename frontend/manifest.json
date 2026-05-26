@@ -1,7 +1,7 @@
 {
-  "name": "Prometheus",
-  "short_name": "Prometheus",
-  "description": "Relative density \u2014 strength indexed to bodyweight",
+  "name": "Agon",
+  "short_name": "Agon",
+  "description": "Relative density strength tracker",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

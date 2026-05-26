@@ -127,6 +127,22 @@ def init_db():
             (DEMO_USER, _bcrypt.hashpw(DEMO_PASS.encode(), _bcrypt.gensalt()).decode(), "demo")
         )
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS exercises (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL UNIQUE,
+            alias      TEXT,
+            tool       TEXT NOT NULL DEFAULT 'Bar',
+            mult       REAL NOT NULL DEFAULT 2.0,
+            muscles    TEXT NOT NULL DEFAULT '[]',
+            day        TEXT,
+            load_hint  TEXT,
+            is_bw      INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     conn.commit()
 
     # Run per-set time migration
@@ -200,6 +216,17 @@ class ExerciseData(BaseModel):
     mult: Optional[float] = 2.0
     isBW: Optional[bool] = False
     time: Optional[float] = None  # kept for legacy compat, ignored in calc
+
+class ExerciseIn(BaseModel):
+    name: str
+    alias: Optional[str] = ''
+    tool: str = 'Bar'
+    mult: float = 2.0
+    muscles: list[str] = []
+    day: Optional[str] = ''
+    load_hint: Optional[str] = ''
+    is_bw: bool = False
+    sort_order: int = 0
 
 class SessionIn(BaseModel):
     date: str
@@ -417,6 +444,55 @@ def get_progress(exercise_name: str, user=Depends(current_user)):
         })
     return result
 
+
+@app.get("/exercises/bank")
+def get_exercise_bank(user=Depends(current_user)):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM exercises ORDER BY sort_order, name").fetchall()
+    conn.close()
+    return [{"id":r["id"],"name":r["name"],"alias":r["alias"],"tool":r["tool"],
+             "mult":r["mult"],"muscles":json.loads(r["muscles"]),"day":r["day"],
+             "loadHint":r["load_hint"],"isBW":bool(r["is_bw"]),"sortOrder":r["sort_order"]} for r in rows]
+
+@app.post("/exercises/bank")
+def add_exercise(body: ExerciseIn, user=Depends(current_user)):
+    if user["role"] not in ("admin", "guest"):
+        raise HTTPException(status_code=403, detail="Read-only account")
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO exercises (name, alias, tool, mult, muscles, day, load_hint, is_bw, sort_order) VALUES (?,?,?,?,?,?,?,?,?)",
+            (body.name, body.alias, body.tool, body.mult, json.dumps(body.muscles),
+             body.day, body.load_hint, int(body.is_bw), body.sort_order))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+    conn.close()
+    return {"status": "created", "name": body.name}
+
+@app.put("/exercises/bank/{ex_name}")
+def update_exercise(ex_name: str, body: ExerciseIn, user=Depends(current_user)):
+    if user["role"] not in ("admin", "guest"):
+        raise HTTPException(status_code=403, detail="Read-only account")
+    conn = get_db()
+    conn.execute(
+        "UPDATE exercises SET alias=?, tool=?, mult=?, muscles=?, day=?, load_hint=?, is_bw=?, sort_order=? WHERE name=?",
+        (body.alias, body.tool, body.mult, json.dumps(body.muscles),
+         body.day, body.load_hint, int(body.is_bw), body.sort_order, ex_name))
+    conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+@app.delete("/exercises/bank/{ex_name}")
+def delete_exercise(ex_name: str, user=Depends(current_user)):
+    if user["role"] not in ("admin", "guest"):
+        raise HTTPException(status_code=403, detail="Read-only account")
+    conn = get_db()
+    conn.execute("DELETE FROM exercises WHERE name=?", (ex_name,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
 
 @app.get("/exercises/logged")
 def get_logged_exercises(user=Depends(current_user)):
