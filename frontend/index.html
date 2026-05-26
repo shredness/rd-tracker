@@ -931,6 +931,16 @@ function addSet(exId) {
     <td><button class="btn btn-sm" style="padding:2px 6px;" onclick="removeSet(${exId},${sid})">✕</button></td>
   `;
   document.getElementById('sets-'+exId).appendChild(tr);
+  // If BW exercise, populate the load field immediately using effBW
+  if (def.isBW) {
+    const bw = parseFloat(document.getElementById('sess-bw')?.value)||0;
+    if (bw > 0) {
+      const eb = effBW(exId, bw);
+      const loadEl = document.getElementById(`l-${exId}-${sid}`);
+      if (loadEl) { loadEl.value = (eb * def.mult).toFixed(1); loadEl.style.color = 'var(--text3)'; }
+    }
+  }
+  calcRD();
 }
 
 function removeSet(exId, sid) { document.getElementById(`s-${exId}-${sid}`)?.remove(); calcRD(); }
@@ -1212,6 +1222,8 @@ function editSession(date) {
 
     // Call onExChange after sets are in DOM
     onExChange(id);
+    // Populate BW load fields after exercise change is processed
+    if (getExDef(ex.name).isBW) setTimeout(() => updateBWLoadFields(id), 60);
   });
 
   // Defer calcRD until all DOM is settled
