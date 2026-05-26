@@ -277,7 +277,7 @@
       <div style="position:relative;width:100%;height:320px;">
         <canvas id="trendChart" role="img" aria-label="RD and bodyweight trend overlaid"></canvas>
       </div>
-      <p style="font-size:11px;color:var(--text3);margin-top:8px;">Per-session RD. Higher = stronger relative to bodyweight.</p>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px;">Weekly averages (Sat–Thu). RD higher = stronger relative to bodyweight.</p>
     </div>
   </div>
 
@@ -1234,7 +1234,7 @@ async function renderTrend() {
     ? recent60.reduce((a,d)=>a+d.rd,0)/recent60.length
     : rdV.reduce((a,v)=>a+v,0)/rdV.length;
   document.getElementById('t-avg').textContent=avg.toFixed(2);
-  document.getElementById('t-avg-sub').textContent=recent60.length ? `last ${recent60.length} sessions` : 'all time';
+  document.getElementById('t-avg-sub').textContent=recent60.length ? `last ${recent60.length} weeks` : 'all time';
   const pk=trendData.reduce((b,d)=>d.rd>b.rd?d:b);
   document.getElementById('t-peak').textContent=pk.rd.toFixed(2);
   document.getElementById('t-peak-d').textContent=pk.week;

@@ -354,18 +354,32 @@ def get_trend(user=Depends(current_user)):
     ).fetchall()
     conn.close()
 
-    # Return per-session data — matches original spreadsheet which plots each session individually
-    result = []
+    # Group by week-ending Thursday (Sat-Thu workout week, matching original spreadsheet)
+    # weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+    # Days to next Thursday: Thu=0, Fri=6, Sat=5, Sun=4, Mon=3, Tue=2, Wed=1
+    days_to_thursday = {0:3, 1:2, 2:1, 3:0, 4:6, 5:5, 6:4}
+
+    by_week: dict = {}
     for r in rows:
         try:
             d = datetime.strptime(r["date"], "%Y-%m-%d")
         except ValueError:
             continue
+        delta = days_to_thursday[d.weekday()]
+        thu = d + timedelta(days=delta)
+        key = f"{thu.month}/{thu.day}/{thu.year}"
+        if key not in by_week:
+            by_week[key] = []
+        by_week[key].append({"rd": r["rd"], "wt": r["bw"]})
+
+    result = []
+    for week, entries in by_week.items():
         result.append({
-            "week": f"{d.month}/{d.day}/{d.year}",  # field kept as 'week' for frontend compat
-            "rd":   r["rd"],
-            "wt":   r["bw"],
+            "week": week,
+            "rd":   round(sum(e["rd"] for e in entries) / len(entries), 2),
+            "wt":   round(sum(e["wt"] for e in entries) / len(entries), 1),
         })
+    result.sort(key=lambda w: datetime.strptime(w["week"], "%m/%d/%Y"))
     return result
 
 
