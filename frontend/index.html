@@ -1732,7 +1732,7 @@ function renderBankTable() {
     <tr style="border-bottom:1px solid var(--border);">
       <td style="padding:6px 10px;">${inp(e.name, idx, 'name')}</td>
       <td style="padding:6px 8px;">${selTool(e.tool, idx)}</td>
-      <td style="padding:6px 8px;">${inp(e.mult, idx, 'mult', 'style="width:46px;background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 5px;font-size:12px;" type="number" step="0.05" min="0.1"')}</td>
+      <td style="padding:6px 4px;max-width:50px;overflow:hidden;">${inp(e.mult, idx, 'mult', 'style="width:46px;max-width:46px;background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 5px;font-size:12px;" type="number" step="0.05" min="0.1" maxlength="5"')}</td>
       <td style="padding:6px 8px;">
         <div class="muscle-tags" onclick="openMusclePicker(${idx})" style="cursor:pointer;display:flex;flex-wrap:wrap;gap:3px;min-width:100px;padding:3px;border-radius:5px;border:1px solid var(--border);">
           ${getMuscleTagsHtml(e)}
