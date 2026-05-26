@@ -5,6 +5,7 @@ networks:
 
 services:
   backend:
+    container_name: prometheus-data
     image: ghcr.io/shredness/rd-tracker-backend:latest
     restart: unless-stopped
     networks:
@@ -21,6 +22,7 @@ services:
       retries: 3
 
   frontend:
+    container_name: prometheus-ui
     image: ghcr.io/shredness/rd-tracker-frontend:latest
     restart: unless-stopped
     networks:
