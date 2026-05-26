@@ -226,9 +226,9 @@
 
   <!-- LOG -->
   <div id="tab-log" class="tab-panel active">
-    <div class="metric-grid">
-      <div class="metric"><div class="metric-label">Avg RD</div><div class="metric-value" id="s-avg">—</div><div class="metric-sub">all sessions</div></div>
+    <div class="metric-grid" id="workout-stats">
       <div class="metric"><div class="metric-label">Last session</div><div class="metric-value" id="s-last">—</div><div class="metric-sub" id="s-last-d">—</div></div>
+      <div class="metric"><div class="metric-label">Average RD</div><div class="metric-value" id="s-avg">—</div><div class="metric-sub" id="s-avg-sub">last 4 weeks</div></div>
       <div class="metric"><div class="metric-label">Best session</div><div class="metric-value" id="s-best">—</div><div class="metric-sub" id="s-best-d">—</div></div>
       <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value" id="s-count">—</div><div class="metric-sub">total logged</div></div>
     </div>
@@ -749,6 +749,7 @@ function switchTab(name) {
   const names = ['log','history','trend','bank','progress','export','users'];
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
   names.forEach(n => document.getElementById('tab-'+n).classList.toggle('active', n===name));
+  if (name==='log') { const sg=document.getElementById('workout-stats'); if(sg) sg.style.display=''; }
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
   if (name==='export') updateExportSummary();
@@ -1030,8 +1031,11 @@ async function saveSession() {
 
 function updateStats() {
   if(!sessions||!sessions.length){return;}
-  const rds=sessions.map(s=>s.rd);
-  document.getElementById('s-avg').textContent=(rds.reduce((a,v)=>a+v,0)/rds.length).toFixed(2);
+  const cutoff4wk = new Date(Date.now() - 28*24*60*60*1000).toISOString().slice(0,10);
+  const recent = sessions.filter(s => s.date >= cutoff4wk);
+  const rdsRecent = recent.length ? recent.map(s=>s.rd) : sessions.map(s=>s.rd);
+  document.getElementById('s-avg').textContent=(rdsRecent.reduce((a,v)=>a+v,0)/rdsRecent.length).toFixed(2);
+  document.getElementById('s-avg-sub').textContent=recent.length ? 'last 4 weeks' : 'all sessions';
   const last=sessions[sessions.length-1];
   document.getElementById('s-last').textContent=last.rd.toFixed(2);
   document.getElementById('s-last-d').textContent=last.date;
@@ -1105,6 +1109,10 @@ async function deleteSession(date) {
 function editSession(date) {
   const session = sessions.find(s => s.date === date);
   if (!session) return;
+
+  // Hide stats grid while editing
+  const statsGrid = document.getElementById('workout-stats');
+  if (statsGrid) statsGrid.style.display = 'none';
 
   // Switch to Workout tab and populate the form
   switchTab('log');
