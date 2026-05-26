@@ -797,6 +797,7 @@ function switchTab(name) {
     if (cb && cb.style.display !== 'none' && !window._editSessionActive) { cancelEdit(); return; }
   }
   if (name==='history') populateHistoryExerciseFilter();
+  if (name==='bank') renderBankTable();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
   if (name==='export') updateExportSummary();
@@ -1501,7 +1502,6 @@ async function confirmMusclePicker() {
 async function loadBankFromAPI() {
   try {
     const data = await apiFetch('/exercises/bank');
-    console.log('loadBankFromAPI response:', Array.isArray(data), data?.length);
     if (Array.isArray(data) && data.length > 0) {
       EXERCISE_BANK.length = 0;
       data.forEach(e => EXERCISE_BANK.push({
