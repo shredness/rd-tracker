@@ -766,7 +766,10 @@ function applyRoleUI() {
 
 async function init() {
   // Reapply saved theme in case anything reset it during bootstrap
-  try { const saved = localStorage.getItem('prometheus-theme') || 'dark'; applyTheme(saved); } catch(e) {}
+  try {
+    const saved = localStorage.getItem('prometheus-theme') || 'dark';
+    applyTheme(saved);
+  } catch(e) {}
   // Reset exercise container so multiple init() calls don't stack blocks
   document.getElementById('ex-container').innerHTML = '';
   exCount = 0; setCounts = {};
@@ -2011,31 +2014,6 @@ function getCurrentLoad(exName) {
 let progressLoadChart = null;
 let progressVolChart  = null;
 
-
-  let peak = 0;
-  for (const session of sessions) {
-    const ex = (session.exercises || []).find(e => e.name === exName);
-    if (ex) {
-      const sets = ex.sets || [];
-      const maxSet = sets.reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
-      peak = Math.max(peak, maxSet);
-    }
-  }
-  return peak;
-}
-
-function getCurrentLoad(exName) {
-  // Load from most recent session with this exercise
-  for (let i = sessions.length - 1; i >= 0; i--) {
-    const ex = (sessions[i].exercises || []).find(e => e.name === exName);
-    if (ex) {
-      const sets = ex.sets || [];
-      const maxSet = sets.reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
-      return maxSet;
-    }
-  }
-  return 0;
-}
 
 function initProgress() {
   const sel = document.getElementById('progress-exercise');
