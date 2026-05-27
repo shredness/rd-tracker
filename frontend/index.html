@@ -67,7 +67,7 @@
   /* ── Header ── */
   .app-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
   h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }
-  .subtitle { font-size: 13px; color: var(--text2); margin-bottom: 24px; font-style: italic; }
+  .subtitle { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
   .theme-toggle { background: none; border: 1px solid var(--border2); border-radius: 20px; padding: 5px 10px; cursor: pointer; color: var(--text2); font-size: 16px; line-height: 1; transition: all .15s; flex-shrink: 0; margin-top: 2px; }
   .theme-toggle:hover { background: var(--bg2); color: var(--text); }
 
@@ -153,7 +153,7 @@
   /* ── History ── */
   .history-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
   .history-item:last-child { border-bottom: none; }
-  .history-actions { display: flex; gap: 6px; opacity: 1; transition: opacity .15s; flex-shrink: 0; }
+  .history-actions { display: flex; gap: 6px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
   .history-item:hover .history-actions { opacity: 1; }
   @media (max-width: 600px) { .history-actions { opacity: 1; } }
   .confirm-bar { background: var(--red-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-top: 6px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--red-text); }
@@ -196,7 +196,7 @@
         <img src="icon-192.png" style="width:72px;height:72px;" onerror="this.style.display='none';this.parentNode.innerHTML='🔥';">
       </div>
       <h1 style="font-size:22px; font-weight:700; margin-bottom:4px;">Agon</h1>
-      <p style="font-size:13px; color:var(--text2); font-style:italic;">strength through loss</p>
+      <p style="font-size:13px; color:var(--text2);">strength through loss</p>
     </div>
     <div class="form-group" style="margin-bottom:14px;">
       <label>Username</label>
@@ -531,32 +531,7 @@
 <script>
 const API = '/api';
 
-let EXERCISE_BANK = [
-  {name:'Conventional Deadlift', alias:'Deadlift', tool:'Bar', mult:2.0, muscle:'Legs / Back', day:'Saturday', loadHint:'lbs per side', isBW:false},
-  {name:'Bench Press', alias:'Glute Bridge Bench Press', tool:'Bar', mult:2.0, muscle:'Chest / Triceps', day:'Saturday', loadHint:'lbs per side', isBW:false},
-  {name:'Bicep Curl', alias:'Bicep Curl', tool:'Bar', mult:2.0, muscle:'Biceps', day:'Sunday', loadHint:'lbs per side', isBW:false},
-  {name:'Overhead Tricep Extension', alias:'Overhead Tricep Ext', tool:'Cable', mult:1.0, muscle:'Triceps', day:'Sunday', loadHint:'total lbs', isBW:false},
-  {name:'Bayesian Curl', alias:'Bayesian Curl', tool:'Cable', mult:2.0, muscle:'Biceps', day:'Sunday', loadHint:'lbs per side', isBW:false},
-  {name:'Pullover no sit-up', alias:'Pullover no sit-up', tool:'Cable', mult:1.0, muscle:'Core', day:'Sunday', loadHint:'total lbs', isBW:false},
-  {name:'Mixed Grip Pull ups', alias:'Mixed Grip Pull ups', tool:'Bodyweight', mult:1.0, muscle:'Back / Biceps', day:'Tuesday', loadHint:'bodyweight', isBW:true, isAssist:false},
-  {name:'Shoulder Press', alias:'Shoulder Press', tool:'Bar', mult:2.0, muscle:'Shoulders / Triceps', day:'Tuesday', loadHint:'lbs per side', isBW:false},
-  {name:'Incline Bench Press', alias:'Incline Bench Press', tool:'Cable', mult:2.0, muscle:'Chest / Triceps', day:'Wednesday', loadHint:'lbs per side', isBW:false},
-  {name:'Incline Fly', alias:'Chest Fly', tool:'Cable', mult:2.0, muscle:'Chest', day:'Wednesday', loadHint:'lbs per side', isBW:false},
-  {name:'Bent Over Row', alias:'Back Row', tool:'Bar', mult:2.0, muscle:'Back', day:'Wednesday', loadHint:'lbs per side', isBW:false},
-  {name:'Lateral Raise', alias:'Lateral Raises', tool:'Cable', mult:2.0, muscle:'Shoulders', day:'Wednesday', loadHint:'lbs per side', isBW:false},
-  {name:'Low Bar Squat', alias:'Back Squat', tool:'Bar', mult:2.0, muscle:'Legs', day:'Thursday', loadHint:'lbs per side', isBW:false},
-  {name:'KB Swings', alias:'KB Swings', tool:'Kettlebell', mult:1.0, muscle:'Legs / Back', day:'Thursday', loadHint:'total lbs', isBW:false},
-  {name:'Hanging Knee Tuck', alias:'Hanging Knee Tuck', tool:'Bodyweight', mult:0.35, muscle:'Core', day:'Mon/Fri', loadHint:'bodyweight', isBW:true, isAssist:false},
-  {name:'Assisted Pull Ups', alias:'Assisted Pull Ups', tool:'Bodyweight', mult:0.75, muscle:'Back / Biceps', day:'—', loadHint:'bodyweight', isBW:true, isAssist:true},
-  {name:'Crossover Rear Delt Fly', alias:'Incline Reverse Fly', tool:'Cable', mult:2.0, muscle:'Shoulders / Back', day:'—', loadHint:'lbs per side', isBW:false},
-  {name:'Upright Row', alias:'Upright Row', tool:'Bar', mult:2.0, muscle:'Shoulders / Back', day:'—', loadHint:'lbs per side', isBW:false},
-  {name:'Goblet Squat', alias:'Goblet Squat', tool:'Kettlebell', mult:1.0, muscle:'Legs', day:'—', loadHint:'total lbs', isBW:false},
-  {name:'KB Front Squat', alias:'KB Front Squat', tool:'Kettlebell', mult:1.0, muscle:'Legs', day:'—', loadHint:'total lbs', isBW:false},
-  {name:'KB Step-up', alias:'KB Step Ups', tool:'Kettlebell', mult:1.0, muscle:'Legs / Core', day:'—', loadHint:'total lbs', isBW:false},
-  {name:"Farmer's Walk", alias:"Farmer's Walk", tool:'Kettlebell', mult:1.0, muscle:'Core', day:'—', loadHint:'total lbs', isBW:false},
-  {name:'Pullover to sit-up', alias:'Core', tool:'Kettlebell', mult:1.0, muscle:'Core', day:'—', loadHint:'total lbs', isBW:false},
-  {name:'Hanging Leg Raise', alias:'Hanging Leg Raises', tool:'Bodyweight', mult:0.50, muscle:'Core', day:'—', loadHint:'bodyweight', isBW:true, isAssist:false},
-];
+
 
 let sessions = []; // always an array
 let exCount = 0, setCounts = {};
@@ -1188,8 +1163,8 @@ function renderHistory() {
         <div style="font-size:11px;color:var(--text3);">${s.bw} lbs${s.notes ? '<span style="margin-left:8px;color:var(--text2);font-style:italic;">'+s.notes+'</span>' : ''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;min-width:80px;justify-content:flex-end;">
-        ${crownHtml}
         ${badge}
+        ${crownHtml}
       </div>
       <div class="history-actions">
         <button class="btn btn-sm" onclick="editSession('${s.date}')" title="Edit session">✏️</button>
@@ -1473,6 +1448,8 @@ async function renderTrend() {
   });
   wC=null; // no longer used separately
 }
+
+let EXERCISE_BANK = []; // populated by loadBankFromAPI()
 
 const MUSCLE_GROUPS = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Glutes','Core','Calves','Full Body'];
 
