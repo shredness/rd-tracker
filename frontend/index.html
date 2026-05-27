@@ -352,6 +352,7 @@
           </select>
         </div>
         <div id="progress-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;"></div>
+        <div id="progress-custom-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;"></div>
       </div>
     </div>
     <div class="card" style="padding:16px;" id="progress-load-card">
@@ -369,6 +370,22 @@
     <div class="card" style="padding:16px;" id="progress-pr-card">
       <div class="section-label" style="margin-bottom:12px;">Personal records by rep count</div>
       <div id="progress-pr-table" style="overflow-x:auto;"></div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div class="section-label" style="margin-bottom:12px;">Strength maintenance (all exercises)</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:8px 0;text-align:left;color:var(--text2);font-weight:600;">Exercise</th>
+              <th style="padding:8px 0;text-align:right;color:var(--text2);font-weight:600;">Current</th>
+              <th style="padding:8px 0;text-align:right;color:var(--text2);font-weight:600;">Peak</th>
+              <th style="padding:8px 0;text-align:right;color:var(--text2);font-weight:600;">Ratio</th>
+            </tr>
+          </thead>
+          <tbody id="strength-maintenance-body"></tbody>
+        </table>
+      </div>
     </div>
     <div class="card" style="padding:16px;" id="progress-vol-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
@@ -1949,11 +1966,91 @@ async function confirmAddEx() {
   showToast(`"${name}" added to exercise bank`);
 }
 
+function getWeeklyVolume(exName) {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  
+  let totalVol = 0;
+  for (const session of sessions) {
+    if (session.date < sevenDaysAgoStr) continue;
+    const ex = (session.exercises || []).find(e => e.name === exName);
+    if (ex) totalVol += ex.totalVol || 0;
+  }
+  return totalVol;
+}
+
+function getPeakLoad(exName) {
+  let peak = 0;
+  for (const session of sessions) {
+    const ex = (session.exercises || []).find(e => e.name === exName);
+    if (ex) {
+      const maxSet = (ex.sets || []).reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
+      peak = Math.max(peak, maxSet);
+    }
+  }
+  return peak;
+}
+
+function getCurrentLoad(exName) {
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    const ex = (sessions[i].exercises || []).find(e => e.name === exName);
+    if (ex) {
+      const maxSet = (ex.sets || []).reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
+      return maxSet;
+    }
+  }
+  return 0;
+}
+
+
 // ── Progress tab ──
 let progressLoadChart = null;
 let progressVolChart  = null;
 
-async function initProgress() {
+async function getWeeklyVolume(exName) {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  
+  let totalVol = 0;
+  for (const session of sessions) {
+    if (session.date < sevenDaysAgoStr) continue;
+    const ex = (session.exercises || []).find(e => e.name === exName);
+    if (ex) {
+      totalVol += ex.totalVol || 0;
+    }
+  }
+  return totalVol;
+}
+
+function getPeakLoad(exName) {
+  let peak = 0;
+  for (const session of sessions) {
+    const ex = (session.exercises || []).find(e => e.name === exName);
+    if (ex) {
+      const sets = ex.sets || [];
+      const maxSet = sets.reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
+      peak = Math.max(peak, maxSet);
+    }
+  }
+  return peak;
+}
+
+function getCurrentLoad(exName) {
+  // Load from most recent session with this exercise
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    const ex = (sessions[i].exercises || []).find(e => e.name === exName);
+    if (ex) {
+      const sets = ex.sets || [];
+      const maxSet = sets.reduce((max, s) => Math.max(max, s.trueLbs || s.rawLoad || 0), 0);
+      return maxSet;
+    }
+  }
+  return 0;
+}
+
+function initProgress() {
   const sel = document.getElementById('progress-exercise');
   const current = sel.value;
   try {
@@ -1964,8 +2061,59 @@ async function initProgress() {
   if (sel.value) loadProgress();
 }
 
+function renderCustomStats() {
+  const selected = document.getElementById('progress-exercise')?.value || '';
+  const statsDiv = document.getElementById('progress-custom-stats');
+  if (!statsDiv || !selected) {
+    if (statsDiv) statsDiv.innerHTML = '';
+    return;
+  }
+  
+  const weeklyVol = getWeeklyVolume(selected);
+  const peakLoad = getPeakLoad(selected);
+  const currentLoad = getCurrentLoad(selected);
+  const ratio = peakLoad > 0 ? ((currentLoad / peakLoad) * 100).toFixed(1) : 0;
+  
+  const ratioColor = ratio >= 95 ? '#10B981' : ratio >= 85 ? '#F59E0B' : '#EF4444';
+  statsDiv.innerHTML = `
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:12px;">
+      <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;">7-DAY VOLUME</div>
+      <div style="font-size:20px;font-weight:600;color:var(--accent);">${Math.round(weeklyVol).toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">lbs</div>
+    </div>
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:12px;">
+      <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;">STRENGTH vs PEAK</div>
+      <div style="font-size:20px;font-weight:600;color:${ratioColor};">${ratio}%</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">${currentLoad}/${peakLoad} lbs</div>
+    </div>
+  `;
+}
+
+function renderStrengthMaintenance() {
+  const body = document.getElementById('strength-maintenance-body');
+  if (!body) return;
+  
+  const exerciseNames = [...new Set(sessions.flatMap(s => (s.exercises||[]).map(e => e.name)))].sort();
+  
+  body.innerHTML = exerciseNames.map(exName => {
+    const peak = getPeakLoad(exName);
+    const current = getCurrentLoad(exName);
+    const ratio = peak > 0 ? ((current / peak) * 100).toFixed(1) : 0;
+    const ratioColor = ratio >= 95 ? '#10B981' : ratio >= 85 ? '#F59E0B' : '#EF4444';
+    
+    return `<tr style="border-bottom:0.5px solid var(--border);">
+      <td style="padding:8px 0;color:var(--text);">${exName}</td>
+      <td style="padding:8px 0;text-align:right;color:var(--text);">${current > 0 ? current.toFixed(1) : '—'}</td>
+      <td style="padding:8px 0;text-align:right;color:var(--text);">${peak > 0 ? peak.toFixed(1) : '—'}</td>
+      <td style="padding:8px 0;text-align:right;font-weight:600;color:${ratioColor};">${ratio}%</td>
+    </tr>`;
+  }).join('');
+}
+
 async function loadProgress() {
   const name = document.getElementById('progress-exercise').value;
+  renderCustomStats();
+  renderStrengthMaintenance();
   if (!name) return;
 
   let data = [];
