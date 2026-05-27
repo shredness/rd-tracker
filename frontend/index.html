@@ -600,10 +600,11 @@ function toggleTheme() {
 // Apply saved theme immediately
 (function() {
   try {
-    const saved = localStorage.getItem('prometheus-theme');
-    if (saved) applyTheme(saved);
-    else applyTheme('dark');
-  } catch(e) {}
+    const saved = localStorage.getItem('prometheus-theme') || 'dark';
+    applyTheme(saved);
+  } catch(e) {
+    applyTheme('dark');
+  }
 })();
 
 // Check for existing session on page load
@@ -764,6 +765,8 @@ function applyRoleUI() {
 }
 
 async function init() {
+  // Reapply saved theme in case anything reset it during bootstrap
+  try { const saved = localStorage.getItem('prometheus-theme') || 'dark'; applyTheme(saved); } catch(e) {}
   // Reset exercise container so multiple init() calls don't stack blocks
   document.getElementById('ex-container').innerHTML = '';
   exCount = 0; setCounts = {};
@@ -2008,23 +2011,7 @@ function getCurrentLoad(exName) {
 let progressLoadChart = null;
 let progressVolChart  = null;
 
-async function getWeeklyVolume(exName) {
-  const now = new Date();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
-  
-  let totalVol = 0;
-  for (const session of sessions) {
-    if (session.date < sevenDaysAgoStr) continue;
-    const ex = (session.exercises || []).find(e => e.name === exName);
-    if (ex) {
-      totalVol += ex.totalVol || 0;
-    }
-  }
-  return totalVol;
-}
 
-function getPeakLoad(exName) {
   let peak = 0;
   for (const session of sessions) {
     const ex = (session.exercises || []).find(e => e.name === exName);
