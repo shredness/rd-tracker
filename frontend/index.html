@@ -311,7 +311,7 @@
   <!-- BANK -->
   <div id="tab-bank" class="tab-panel">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;color:var(--text2);">Edit exercises, adjust multipliers, or add new ones. Changes persist in your browser.</div>
+      <div style="font-size:13px;color:var(--text2);">Edit exercises, adjust multipliers, or add new ones. Changes are shared across all users.</div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-sm" onclick="addBankRow()">+ Add exercise</button>
         <button class="btn btn-sm" onclick="resetBank()" style="color:var(--text3);">Reset to defaults</button>
@@ -401,7 +401,7 @@
         <tbody>
           <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 0;font-weight:500;">Log</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Date, Weight, Exercise, Load, True, Reps, Vol, Time, Density, Rel Density, Notes</td><td style="padding:8px 0;font-size:12px;color:var(--text2);" id="exp-log-ct">—</td></tr>
           <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 0;font-weight:500;">Trend</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Week Ending, Relative Density Avg, Weekly Weight Avg (lbs)</td><td style="padding:8px 0;font-size:12px;color:var(--text2);" id="exp-trend-ct">—</td></tr>
-          <tr><td style="padding:8px 0;font-weight:500;">ExerciseBank</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Name, Alias, Tool, Multiplier, Muscle Group, Day, Load Input, Is Bodyweight</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">${EXERCISE_BANK.length} rows</td></tr>
+          <tr><td style="padding:8px 0;font-weight:500;">ExerciseBank</td><td style="padding:8px 0;font-size:12px;color:var(--text2);">Name, Alias, Tool, Multiplier, Muscle Group, Day, Load Input, Is Bodyweight</td><td style="padding:8px 0;font-size:12px;color:var(--text2);" id="exp-bank-ct">— rows</td></tr>
         </tbody>
       </table>
     </div>
@@ -527,7 +527,7 @@
 <script>
 const API = '/api';
 
-const EXERCISE_BANK = [
+let EXERCISE_BANK = [
   {name:'Conventional Deadlift', alias:'Deadlift', tool:'Bar', mult:2.0, muscle:'Legs / Back', day:'Saturday', loadHint:'lbs per side', isBW:false},
   {name:'Bench Press', alias:'Glute Bridge Bench Press', tool:'Bar', mult:2.0, muscle:'Chest / Triceps', day:'Saturday', loadHint:'lbs per side', isBW:false},
   {name:'Bicep Curl', alias:'Bicep Curl', tool:'Bar', mult:2.0, muscle:'Biceps', day:'Sunday', loadHint:'lbs per side', isBW:false},
@@ -591,8 +591,8 @@ function applyTheme(theme) {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('SW registered:', reg.scope))
-      .catch(err => console.log('SW registration failed:', err));
+      .then(reg => console.debug('SW registered:', reg.scope))
+      .catch(err => console.warn('SW registration failed:', err));
   });
 }
 
@@ -996,6 +996,7 @@ function addSet(exId) {
 function removeSet(exId, sid) { document.getElementById(`s-${exId}-${sid}`)?.remove(); calcRD(); }
 
 function effBW(id, bw) {
+  id = String(id); // normalise to string for DOM queries
   const mode = document.querySelector(`input[name="bwm-${id}"]:checked`)?.value||'normal';
   const val = parseFloat(document.getElementById('bwextra-val-'+id)?.value)||0;
   if (mode==='vest') return bw + val;
@@ -1059,7 +1060,7 @@ async function saveSession() {
       const setTime=parseFloat(document.getElementById(`t-${exId}-${sid}`)?.value)||2;
       if(!reps) return;
       let trueLbs,rawLoad;
-      if(def.isBW){const eb=effBW(id,bw);console.log('saveSession BW: id='+id+' bw='+bw+' eb='+eb+' mode='+document.querySelector(`input[name="bwm-${id}"]:checked`)?.value+' vestVal='+document.getElementById('bwextra-val-'+id)?.value);trueLbs=eb*def.mult;rawLoad=eb;}
+      if(def.isBW){const eb=effBW(id,bw);trueLbs=eb*def.mult;rawLoad=eb;}
       else{rawLoad=parseFloat(document.getElementById(`l-${exId}-${sid}`)?.value)||0;if(!rawLoad)return;const vtm2=def.tool==='Bar'?(document.querySelector(`input[name="vtm-${id}"]:checked`)?.value||'vitruvian'):'';if(def.tool==='Bar'&&vtm2==='standard'){const bwt=parseFloat(document.getElementById(`barwt-val-${id}`)?.value)||0;trueLbs=rawLoad+bwt;}else{trueLbs=rawLoad*(def.tool==='Bar'?2.0:def.mult);}}
       const vol=trueLbs*reps;
       exVol+=vol;
@@ -1134,6 +1135,7 @@ function renderHistory() {
   const exFilter = document.getElementById('hist-exercise')?.value || '';
 
   let filtered = [...sessions].reverse();
+  // Date strings are YYYY-MM-DD — lexicographic comparison is correct
   if (from) filtered = filtered.filter(s => s.date >= from);
   if (to)   filtered = filtered.filter(s => s.date <= to);
   if (exFilter) filtered = filtered.filter(s => (s.exercises||[]).some(e => e.name === exFilter));
@@ -1468,8 +1470,6 @@ async function renderTrend() {
   wC=null; // no longer used separately
 }
 
-const BANK_STORAGE_KEY = 'rd_tracker_bank_v1';
-
 const MUSCLE_GROUPS = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Glutes','Core','Calves','Full Body'];
 
 let _musclePickerIdx = null;
@@ -1531,7 +1531,6 @@ async function loadBankFromAPI() {
   try {
     const data = await apiFetch('/exercises/bank');
     if (Array.isArray(data) && data.length > 0) {
-      console.log('loadBankFromAPI: loading', data.length, 'exercises');
       EXERCISE_BANK.length = 0;
       data.forEach(e => EXERCISE_BANK.push({
         name: e.name, alias: e.alias||e.name, tool: e.tool||'Bar',
@@ -1701,6 +1700,8 @@ async function saveBankRowToAPI(ex) {
   };
   // PUT always upserts (backend inserts if not exists)
   await apiFetch('/exercises/bank/'+encodeURIComponent(ex.name), {method:'PUT', body:JSON.stringify(payload)});
+  // Clear _isNew flag on confirmed save
+  if (ex._isNew !== undefined) delete ex._isNew;
 }
 
 async function deleteBankExerciseFromAPI(name) {
@@ -1833,13 +1834,13 @@ async function updateExportSummary() {
   const lr=buildLogRows();
   document.getElementById('exp-log-ct').textContent=lr.length+' rows';
   try { const tr=await buildTrendRows(); document.getElementById('exp-trend-ct').textContent=tr.length+' rows'; } catch(e){}
+  const bankCt=document.getElementById('exp-bank-ct'); if(bankCt) bankCt.textContent=EXERCISE_BANK.length+' rows';
   const cols=['Date','Weight (lbs)','Exercise','Load (lbs)','Reps','True (lbs)','Vol (lbs)','Time (min)','Density','Rel Density','Notes'];
   const previewCols=cols.filter(c=>c!=='Notes');
   const table=document.getElementById('log-preview');
   const preview=lr.slice(-5);
   if(!preview.length){table.innerHTML='<tr><td colspan="10" style="padding:12px;font-size:12px;color:var(--text3);text-align:center;">Log sessions to see preview</td></tr>';return;}
-  table.innerHTML=`<thead><tr style="border-bottom:1px solid var(--border);">${cols.map(c=>`<th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);white-space:nowrap;">${c}</th>`).join('')}</tr></thead>`+
-    `<thead><tr>${previewCols.map(c=>`<th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;">${c}</th>`).join('')}</tr></thead><tbody>${preview.map(r=>`<tr style="border-bottom:1px solid var(--border);">${previewCols.map(c=>`<td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  table.innerHTML=`<thead><tr style="border-bottom:1px solid var(--border);">${previewCols.map(c=>`<th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);white-space:nowrap;">${c}</th>`).join('')}</tr></thead><tbody>${preview.map(r=>`<tr style="border-bottom:1px solid var(--border);">${previewCols.map(c=>`<td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
 }
 
 async function doExport() {

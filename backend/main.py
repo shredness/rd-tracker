@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
 
-app = FastAPI(title="Prometheus API")
+app = FastAPI(title="Agon API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,14 +18,14 @@ app.add_middleware(
 )
 
 DB_PATH           = os.environ.get("DB_PATH", "/data/sessions.db")
-SECRET_KEY        = os.environ.get("SECRET_KEY", "prometheus-change-this-in-production")
+SECRET_KEY        = os.environ.get("SECRET_KEY", "agon-change-this-in-production")
 ALGORITHM         = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-ADMIN_USER = "manny"
-ADMIN_PASS = "pR0m3th3us"
+ADMIN_USER = os.environ.get("ADMIN_USER", "manny")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "pR0m3th3us")
 DEMO_USER  = "demo"
 DEMO_PASS  = "demo"
 
@@ -69,11 +69,13 @@ def migrate_sessions_to_per_set_time(conn):
         if changed:
             # Recalculate session RD
             bw = conn.execute("SELECT bw FROM sessions WHERE id=?", (r["id"],)).fetchone()["bw"]
-            total_ex_density = sum(ex.get("density", 0) for ex in exercises)
-            rd = round(total_ex_density / bw, 2) if bw else 0
+            total_vol  = sum(s.get("vol", 0)  for ex in exercises for s in ex.get("sets", []))
+            total_time = sum(s.get("time", 0) for ex in exercises for s in ex.get("sets", []) if s.get("time", 0) > 0)
+            total_density = round(total_vol / total_time, 2) if total_time > 0 else 0
+            rd = round(total_vol / (total_time * bw), 2) if (total_time > 0 and bw) else 0
             conn.execute(
                 "UPDATE sessions SET exercises=?, rd=?, total_density=? WHERE id=?",
-                (json.dumps(exercises), rd, round(total_ex_density, 2), r["id"])
+                (json.dumps(exercises), rd, total_density, r["id"])
             )
             updated += 1
     if updated:
@@ -464,16 +466,21 @@ def add_exercise(body: ExerciseIn, user=Depends(current_user)):
         raise HTTPException(status_code=403, detail="Read-only account")
     conn = get_db()
     try:
-        conn.execute(
-            "INSERT INTO exercises (name, alias, tool, mult, muscles, day, load_hint, is_bw, sort_order) VALUES (?,?,?,?,?,?,?,?,?)",
-            (body.name, body.alias, body.tool, body.mult, json.dumps(body.muscles),
-             body.day, body.load_hint, int(body.is_bw), body.sort_order))
+        conn.execute("""
+            INSERT INTO exercises (name, alias, tool, mult, muscles, day, load_hint, is_bw, sort_order)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(name) DO UPDATE SET
+                alias=excluded.alias, tool=excluded.tool, mult=excluded.mult,
+                muscles=excluded.muscles, day=excluded.day, load_hint=excluded.load_hint,
+                is_bw=excluded.is_bw, sort_order=excluded.sort_order
+        """, (body.name, body.alias, body.tool, body.mult, json.dumps(body.muscles),
+              body.day, body.load_hint, int(body.is_bw), body.sort_order))
         conn.commit()
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
     conn.close()
-    return {"status": "created", "name": body.name}
+    return {"status": "upserted", "name": body.name}
 
 @app.put("/exercises/bank/{ex_name}")
 def update_exercise(ex_name: str, body: ExerciseIn, user=Depends(current_user)):
