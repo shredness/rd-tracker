@@ -147,7 +147,7 @@
   .rd-big { font-size: 32px; font-weight: 800; color: var(--accent); }
 
   /* ── History ── */
-  .history-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .history-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
   .history-item:last-child { border-bottom: none; }
   .history-actions { display: flex; gap: 6px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
   .history-item:hover .history-actions { opacity: 1; }
@@ -192,7 +192,7 @@
         <img src="icon-192.png" style="width:72px;height:72px;" onerror="this.style.display='none';this.parentNode.innerHTML='🔥';">
       </div>
       <h1 style="font-size:22px; font-weight:700; margin-bottom:4px;">Agon</h1>
-      <p style="font-size:13px; color:var(--text2);">Relative density · strength indexed to bodyweight</p>
+      <p style="font-size:13px; color:var(--text2);">strength through loss</p>
     </div>
     <div class="form-group" style="margin-bottom:14px;">
       <label>Username</label>
@@ -212,9 +212,11 @@
 <div class="app" id="main-app" style="display:none;">
   <div class="app-header">
     <h1>Agon</h1>
-    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">🌙</button>
+    <div id="header-right" style="display:flex;align-items:center;gap:10px;margin-left:auto;">
+      <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">🌙</button>
+    </div>
   </div>
-  <p class="subtitle">Relative density — strength indexed to bodyweight</p>
+  <p class="subtitle">strength through loss</p>
   <div class="api-banner" id="api-banner">⚠ Cannot reach the API. Check that the backend container is running.</div>
 
   <div class="tabs">
@@ -745,8 +747,8 @@ function applyRoleUI() {
   const usersBtn = document.getElementById('tab-btn-users');
   if (usersBtn) usersBtn.style.display = isAdmin ? '' : 'none';
 
-  // Add logout + username to header
-  let headerRight = document.querySelector('.app-header');
+  // Add logout + username to header-right group
+  const headerRight = document.getElementById('header-right');
   if (headerRight && !document.getElementById('user-badge')) {
     const badge = document.createElement('div');
     badge.id = 'user-badge';
@@ -1179,8 +1181,10 @@ function renderHistory() {
         <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(s.exercises||[]).map(e=>e.name).join(', ')}</div>
         <div style="font-size:11px;color:var(--text3);">${s.bw} lbs${s.notes ? '<span style="margin-left:8px;color:var(--text2);font-style:italic;">'+s.notes+'</span>' : ''}</div>
       </div>
-      ${badge}
-      ${crownHtml}
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;min-width:80px;justify-content:flex-end;">
+        ${badge}
+        ${crownHtml}
+      </div>
       <div class="history-actions">
         <button class="btn btn-sm" onclick="editSession('${s.date}')" title="Edit session">✏️</button>
         <button class="btn btn-sm btn-danger" onclick="confirmDelete('${s.date}')" title="Delete session">🗑</button>
@@ -1830,11 +1834,12 @@ async function updateExportSummary() {
   document.getElementById('exp-log-ct').textContent=lr.length+' rows';
   try { const tr=await buildTrendRows(); document.getElementById('exp-trend-ct').textContent=tr.length+' rows'; } catch(e){}
   const cols=['Date','Weight (lbs)','Exercise','Load (lbs)','Reps','True (lbs)','Vol (lbs)','Time (min)','Density','Rel Density','Notes'];
+  const previewCols=cols.filter(c=>c!=='Notes');
   const table=document.getElementById('log-preview');
   const preview=lr.slice(-5);
   if(!preview.length){table.innerHTML='<tr><td colspan="10" style="padding:12px;font-size:12px;color:var(--text3);text-align:center;">Log sessions to see preview</td></tr>';return;}
   table.innerHTML=`<thead><tr style="border-bottom:1px solid var(--border);">${cols.map(c=>`<th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);white-space:nowrap;">${c}</th>`).join('')}</tr></thead>`+
-    `<tbody>${preview.map(r=>`<tr style="border-bottom:1px solid var(--border);">${cols.map(c=>`<td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    `<thead><tr>${previewCols.map(c=>`<th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;">${c}</th>`).join('')}</tr></thead><tbody>${preview.map(r=>`<tr style="border-bottom:1px solid var(--border);">${previewCols.map(c=>`<td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
 }
 
 async function doExport() {
