@@ -439,13 +439,27 @@
       <div class="section-label" style="margin-bottom:10px;">Log preview (last 5 rows)</div>
       <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;" id="log-preview"></table></div>
     </div>
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px;">Import from Excel</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Upload a filled template to import historical sessions. Download the template first — it includes a Legend sheet explaining every field and modifier.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+        <button class="btn btn-sm" onclick="downloadImportTemplate()">↓ Download template</button>
+        <span style="font-size:12px;color:var(--text3);">Fill it out, then upload below</span>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">Select filled template:</label>
+        <input type="file" id="import-file" accept=".xlsx" style="font-size:12px;color:var(--text2);" onchange="previewImport(this)">
+      </div>
+      <div id="import-preview" style="margin-top:8px;font-size:13px;color:var(--text2);"></div>
+      <button class="btn btn-primary" id="import-confirm-btn" onclick="confirmImport()" style="display:none;margin-top:12px;">Import sessions</button>
+    </div>
   </div>
 
   <!-- INSIGHTS -->
   <div id="tab-insights" class="tab-panel">
     <div id="insights-no-key" class="card" style="display:none;text-align:center;padding:32px 20px;">
       <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Connect an AI model to unlock Insights</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:440px;margin-left:auto;margin-right:auto;">Ask plain-English questions about your training history and get answers grounded in your actual data. Add a free Google Gemini API key to get started.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:440px;margin-left:auto;margin-right:auto;">Ask plain-English questions about your training history and get answers grounded in your actual data. Add either your Gemini or Claude API key to get started.</div>
       <button class="btn btn-primary" onclick="openSettings()">Open Settings</button>
     </div>
     <div id="insights-chat-wrap" style="display:none;">
@@ -523,12 +537,34 @@
   </div>
 </div>
 
-<!-- AI Settings modal -->
+<!-- Settings modal -->
 <div class="modal-overlay" id="settings-modal" style="display:none;" onclick="if(event.target===this)closeSettings()">
-  <div class="modal">
-    <h3>AI Insights settings</h3>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">Connect a Google Gemini API key to ask questions about your training data. Your key is encrypted and stored only on your server — never shared.</div>
-    <div class="form-group" style="margin-bottom:12px;">
+  <div class="modal" style="max-width:480px;">
+    <h3>Settings</h3>
+
+    <!-- ── Account ── -->
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Account</div>
+    <div class="form-group" style="margin-bottom:10px;">
+      <label>Current password</label>
+      <input type="password" id="s-pw-cur" style="width:100%;" placeholder="Current password" autocomplete="current-password">
+    </div>
+    <div class="form-group" style="margin-bottom:10px;">
+      <label>New password</label>
+      <input type="password" id="s-pw-new" style="width:100%;" placeholder="New password" autocomplete="new-password">
+    </div>
+    <div class="form-group" style="margin-bottom:4px;">
+      <label>Confirm new password</label>
+      <input type="password" id="s-pw-confirm" style="width:100%;" placeholder="Confirm new password" autocomplete="new-password">
+    </div>
+    <div id="settings-pw-msg" style="display:none;font-size:12px;margin-bottom:8px;"></div>
+    <button class="btn btn-sm" onclick="saveSettingsPw()" style="margin-bottom:18px;">Change password</button>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:18px;">
+
+    <!-- ── AI Insights ── -->
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">AI Insights</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Your key is encrypted and stored only on your server — never shared.</div>
+    <div class="form-group" style="margin-bottom:10px;">
       <label>Model</label>
       <select id="ai-model" style="width:100%;" onchange="updateKeyPlaceholder()">
         <optgroup label="Google Gemini">
@@ -544,18 +580,18 @@
         </optgroup>
       </select>
     </div>
-    <div class="form-group" style="margin-bottom:12px;">
+    <div class="form-group" style="margin-bottom:8px;">
       <label>API key <span id="ai-key-provider-label" style="color:var(--text3);font-weight:400;">(Google Gemini)</span></label>
       <input type="password" id="ai-key" style="width:100%;" placeholder="Paste your Gemini API key" autocomplete="off">
       <div id="ai-key-status" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
     </div>
     <div id="ai-key-help" style="font-size:11px;color:var(--text3);margin-bottom:8px;">Gemini: free key at <span style="color:var(--accent);">aistudio.google.com</span> · Claude: <span style="color:var(--accent);">console.anthropic.com</span></div>
     <div id="settings-msg" style="display:none;font-size:13px;margin-bottom:10px;"></div>
-    <div class="modal-footer" style="justify-content:space-between;">
+    <div class="modal-footer" style="justify-content:space-between;padding-top:0;margin-top:4px;">
       <button class="btn btn-sm btn-danger" onclick="removeAiKey()" id="settings-remove-btn" style="display:none;">Remove key</button>
       <div style="display:flex;gap:10px;">
         <button class="btn btn-sm" onclick="testAiKey()">Test</button>
-        <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save</button>
+        <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save key</button>
       </div>
     </div>
   </div>
@@ -2648,6 +2684,116 @@ async function clearInsights() {
     await loadInsightsHistory();
   } catch(e) {
     showToast('Could not clear: ' + e.message);
+  }
+}
+
+
+// ── Settings: password change ─────────────────────────────────
+async function saveSettingsPw() {
+  const cur  = document.getElementById('s-pw-cur').value;
+  const nw   = document.getElementById('s-pw-new').value;
+  const conf = document.getElementById('s-pw-confirm').value;
+  const msg  = document.getElementById('settings-pw-msg');
+
+  const show = (text, err) => {
+    msg.textContent = text;
+    msg.style.color = err ? 'var(--red-text)' : '#10B981';
+    msg.style.display = 'block';
+  };
+
+  if (!cur || !nw || !conf) { show('All three fields are required.', true); return; }
+  if (nw !== conf)           { show('New passwords do not match.', true); return; }
+  if (nw.length < 4)         { show('Password must be at least 4 characters.', true); return; }
+
+  try {
+    // Re-authenticate to verify current password
+    const r = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: currentUser.username, password: cur })
+    });
+    if (!r.ok) { show('Current password is incorrect.', true); return; }
+
+    await aiFetch('/admin/users/' + encodeURIComponent(currentUser.username) + '/password', {
+      method: 'PUT',
+      body: JSON.stringify({ password: nw })
+    });
+    show('✓ Password updated.', false);
+    document.getElementById('s-pw-cur').value = '';
+    document.getElementById('s-pw-new').value = '';
+    document.getElementById('s-pw-confirm').value = '';
+  } catch(e) {
+    show(e.message, true);
+  }
+}
+
+// ── Import ────────────────────────────────────────────────────
+async function downloadImportTemplate() {
+  const token = getToken();
+  const r = await fetch(API + '/import/template', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!r.ok) { showToast('Could not download template'); return; }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'agon_import_template.xlsx'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+let _importFile = null;
+
+function previewImport(input) {
+  const preview = document.getElementById('import-preview');
+  const btn = document.getElementById('import-confirm-btn');
+  _importFile = input.files[0] || null;
+  if (!_importFile) { preview.innerHTML = ''; btn.style.display = 'none'; return; }
+  preview.innerHTML = `<span style="color:var(--text);">File ready: </span><strong>${escapeHtml(_importFile.name)}</strong> (${(_importFile.size/1024).toFixed(1)} KB) — click Import to proceed.`;
+  btn.style.display = '';
+}
+
+async function confirmImport() {
+  if (!_importFile) return;
+  const btn = document.getElementById('import-confirm-btn');
+  const preview = document.getElementById('import-preview');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  const token = getToken();
+  const fd = new FormData();
+  fd.append('file', _importFile);
+
+  try {
+    const r = await fetch(API + '/import/sessions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Import failed');
+
+    let msg = `<span style="color:#10B981;font-weight:600;">✓ Imported ${data.inserted} session(s).</span>`;
+    if (data.skipped?.length) {
+      msg += `<br><span style="color:var(--text3);">Skipped ${data.skipped.length} existing date(s): ${data.skipped.join(', ')}</span>`;
+    }
+    if (data.errors?.length) {
+      msg += `<br><span style="color:var(--red-text);">${data.errors.length} row error(s): ${escapeHtml(data.errors.slice(0,3).join('; '))}</span>`;
+    }
+    preview.innerHTML = msg;
+    btn.style.display = 'none';
+    _importFile = null;
+    document.getElementById('import-file').value = '';
+
+    // Refresh sessions
+    if (data.inserted > 0) {
+      const fetched = await apiFetch('/sessions');
+      sessions = Array.isArray(fetched) ? fetched : [];
+    }
+  } catch(e) {
+    preview.innerHTML = `<span style="color:var(--red-text);">${escapeHtml(e.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import sessions';
   }
 }
 

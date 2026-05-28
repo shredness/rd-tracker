@@ -873,3 +873,295 @@ async def test_ai_key(body: AISettingsIn, user=Depends(current_user)):
     if resp.status_code == 200:
         return {"ok": True, "model": model}
     raise HTTPException(status_code=400, detail=f"Key test failed ({resp.status_code}): {resp.text[:200]}")
+
+# ── Import ────────────────────────────────────────────────────
+from fastapi import UploadFile, File
+from fastapi.responses import StreamingResponse
+import io, openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+@app.get("/import/template")
+def download_import_template(user=Depends(current_user)):
+    """Generate and return a filled-out XLSX import template."""
+    wb = openpyxl.Workbook()
+
+    # ── Log sheet ──
+    ws = wb.active
+    ws.title = "Log"
+
+    headers = ["Date", "Bodyweight (lbs)", "Exercise", "Tool", "Modifier", "Load", "Reps", "Time (min)"]
+    header_fill = PatternFill("solid", fgColor="1A1A18")
+    header_font = Font(bold=True, color="E05A20")
+    thin = Side(style="thin", color="444444")
+    border = Border(bottom=Side(style="thin", color="444444"))
+
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = border
+
+    # Column widths
+    widths = [14, 18, 28, 14, 20, 10, 8, 12]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # Example rows
+    examples = [
+        ["01/15/2026", 200.0, "Bench Press",     "Bar",        "Standard",  185, 5,  1.5],
+        ["01/15/2026", 200.0, "Bench Press",     "Bar",        "Standard",  185, 5,  1.5],
+        ["01/15/2026", 200.0, "Bench Press",     "Bar",        "Standard",  185, 5,  1.5],
+        ["01/15/2026", 200.0, "Incline Fly",     "Cable",      "Double",    40,  12, 1.5],
+        ["01/15/2026", 200.0, "Incline Fly",     "Cable",      "Double",    40,  12, 1.5],
+        ["01/15/2026", 200.0, "Pull-up",         "Bodyweight", "Vest",      25,  8,  1.5],
+        ["01/15/2026", 200.0, "Pull-up",         "Bodyweight", "Vest",      25,  8,  1.5],
+        ["01/17/2026", 199.5, "Low Bar Squat",   "Bar",        "Standard",  225, 3,  2.0],
+        ["01/17/2026", 199.5, "KB Swings",       "Kettlebell", "",          53,  15, 1.5],
+    ]
+    example_font = Font(color="888888", italic=True)
+    for r, row in enumerate(examples, 2):
+        for c, val in enumerate(row, 1):
+            cell = ws.cell(row=r, column=c, value=val)
+            cell.font = example_font
+
+    ws.freeze_panes = "A2"
+
+    # ── Legend sheet ──
+    wl = wb.create_sheet("Legend")
+    wl.column_dimensions["A"].width = 20
+    wl.column_dimensions["B"].width = 60
+    wl.column_dimensions["C"].width = 50
+
+    legend_title_font = Font(bold=True, color="E05A20", size=13)
+    section_font = Font(bold=True, color="CCCCCC")
+    body_font = Font(color="AAAAAA")
+    wl["A1"] = "Agon Import — Field Legend"
+    wl["A1"].font = legend_title_font
+
+    rows = [
+        ("", "", ""),
+        ("FIELD", "DESCRIPTION", "VALID VALUES / NOTES"),
+        ("Date", "Session date", "MM/DD/YYYY — all sets for a session share the same date"),
+        ("Bodyweight (lbs)", "Your bodyweight that day", "Decimal OK — e.g. 199.5"),
+        ("Exercise", "Exercise name", "Any name. New exercises will be created automatically."),
+        ("Tool", "Equipment type", "Bar | Cable | Kettlebell | Dumbbell | Machine | Bodyweight"),
+        ("Modifier", "Sub-type of tool or bodyweight mode", "See below"),
+        ("Load", "Weight entered (see modifier rules)", "Numeric. See below for what to enter per modifier."),
+        ("Reps", "Reps performed in this set", "Integer"),
+        ("Time (min)", "Duration of this set in minutes", "Decimal. e.g. 1.5 for 90 seconds. Defaults to 1.5 if left blank."),
+        ("", "", ""),
+        ("MODIFIER GUIDE", "", ""),
+        ("Tool: Bar", "", ""),
+        ("  Standard", "Two-sided barbell, enter total weight", "Load = total bar weight (e.g. 135 for 45lb bar + 45lb per side)"),
+        ("  Vitruvian", "Vitruvian bar, enter weight per side", "Load = plates per side (trueLbs = Load × 2)"),
+        ("Tool: Cable", "", ""),
+        ("  Single", "One cable / one arm", "Load = stack weight (trueLbs = Load × 1)"),
+        ("  Double", "Two cables / both arms", "Load = stack weight per side (trueLbs = Load × 2)"),
+        ("Tool: Dumbbell", "", ""),
+        ("  (leave blank)", "Always counts both dumbbells", "Load = weight of one dumbbell (trueLbs = Load × 2)"),
+        ("Tool: Kettlebell", "", ""),
+        ("  (leave blank)", "Single bell", "Load = bell weight (trueLbs = Load × 1)"),
+        ("Tool: Machine", "", ""),
+        ("  (leave blank)", "Machine stack", "Load = stack weight (trueLbs = Load × 1)"),
+        ("Tool: Bodyweight", "", ""),
+        ("  Normal", "Just bodyweight", "Load = 0 or leave blank (trueLbs = bodyweight)"),
+        ("  Vest", "Bodyweight + weighted vest", "Load = vest weight in lbs (trueLbs = bodyweight + vest)"),
+        ("  Assisted", "Bodyweight with band/machine assist", "Load = assist % (e.g. 20 = 20% assist, trueLbs = bodyweight × 0.80)"),
+        ("", "", ""),
+        ("NOTES", "", ""),
+        ("", "Each ROW is one SET.", "Group sets for the same exercise on the same date together."),
+        ("", "Time per set defaults to 1.5 min.", "All imported sets use 1.5 min for RD calculation."),
+        ("", "Existing sessions on the same date will NOT be overwritten.", "Change the date or delete the existing session first."),
+        ("", "Grey rows in the Log sheet are examples — delete them before importing.", ""),
+    ]
+
+    for r, (a, b, c) in enumerate(rows, 2):
+        wl.cell(row=r, column=1, value=a)
+        wl.cell(row=r, column=2, value=b)
+        wl.cell(row=r, column=3, value=c)
+        if a in ("FIELD", "MODIFIER GUIDE", "NOTES"):
+            for col in range(1, 4):
+                wl.cell(row=r, column=col).font = section_font
+        elif a in ("Tool: Bar", "Tool: Cable", "Tool: Dumbbell", "Tool: Kettlebell", "Tool: Machine", "Tool: Bodyweight"):
+            for col in range(1, 4):
+                wl.cell(row=r, column=col).font = Font(bold=True, color="E05A20")
+        else:
+            for col in range(1, 4):
+                wl.cell(row=r, column=col).font = body_font
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=agon_import_template.xlsx"}
+    )
+
+
+def _parse_import_row(row, bw: float) -> dict:
+    """Convert a single spreadsheet row into a set dict."""
+    tool      = (str(row[3] or "Bar")).strip()
+    modifier  = (str(row[4] or "")).strip().lower()
+    raw_load  = float(row[5] or 0)
+    reps      = int(float(row[6] or 0))
+    time_min  = float(row[7]) if len(row) > 7 and row[7] not in (None, "", " ") else 1.5
+
+    # Determine trueLbs based on tool + modifier
+    if tool == "Bar":
+        if "vitruvian" in modifier:
+            true_lbs = raw_load * 2
+            mult = 2
+        else:  # Standard
+            true_lbs = raw_load
+            mult = 2
+    elif tool == "Cable":
+        if "double" in modifier:
+            true_lbs = raw_load * 2
+            mult = 2
+        else:  # Single
+            true_lbs = raw_load
+            mult = 1
+    elif tool == "Dumbbell":
+        true_lbs = raw_load * 2
+        mult = 2
+    elif tool == "Kettlebell":
+        true_lbs = raw_load
+        mult = 1
+    elif tool == "Machine":
+        true_lbs = raw_load
+        mult = 1
+    elif tool == "Bodyweight":
+        if "vest" in modifier:
+            true_lbs = bw + raw_load
+        elif "assisted" in modifier or "assist" in modifier:
+            true_lbs = bw * (1 - raw_load / 100.0)
+        else:
+            true_lbs = bw
+        mult = 1
+    else:
+        true_lbs = raw_load
+        mult = 1
+
+    vol = round(true_lbs * reps, 2)
+    return {
+        "rawLoad": raw_load,
+        "trueLbs": round(true_lbs, 2),
+        "reps": reps,
+        "vol": vol,
+        "time": time_min
+    }
+
+
+@app.post("/import/sessions")
+async def import_sessions(user=Depends(current_user), file: UploadFile = File(...)):
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo accounts cannot import data")
+
+    contents = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), data_only=True)
+        ws = wb.active
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read XLSX: {str(e)[:200]}")
+
+    # Parse rows (skip header row 1)
+    from collections import defaultdict, OrderedDict
+    sessions_map = OrderedDict()  # key: (date, bw) → {exercises: {name → {tool, sets[]}}}
+
+    skipped = []
+    errors  = []
+
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(row):
+            continue
+        try:
+            raw_date = str(row[0] or "").strip()
+            bw       = float(row[1] or 0)
+            ex_name  = str(row[2] or "").strip()
+            tool     = str(row[3] or "Bar").strip()
+            modifier = str(row[4] or "").strip()
+
+            if not raw_date or not ex_name or not bw:
+                continue
+
+            # Normalise date to YYYY-MM-DD
+            from datetime import datetime
+            for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d/%m/%Y"):
+                try:
+                    date_str = datetime.strptime(raw_date, fmt).strftime("%Y-%m-%d")
+                    break
+                except ValueError:
+                    continue
+            else:
+                errors.append(f"Row {row_idx}: unrecognised date format '{raw_date}'")
+                continue
+
+            set_data = _parse_import_row(row, bw)
+            if set_data["reps"] <= 0:
+                continue
+
+            key = (date_str, bw)
+            if key not in sessions_map:
+                sessions_map[key] = {}
+            if ex_name not in sessions_map[key]:
+                sessions_map[key][ex_name] = {"tool": tool, "modifier": modifier, "sets": []}
+            sessions_map[key][ex_name]["sets"].append(set_data)
+
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)[:100]}")
+
+    if not sessions_map:
+        raise HTTPException(status_code=400, detail="No valid rows found. Check the template format.")
+
+    # Build session objects and insert
+    conn = get_db()
+    inserted = 0
+    skipped_dates = []
+
+    for (date_str, bw), exercises_map in sessions_map.items():
+        # Check for existing session
+        existing = conn.execute(
+            "SELECT id FROM sessions WHERE user_id=? AND date=?",
+            (user["id"], date_str)
+        ).fetchone()
+        if existing:
+            skipped_dates.append(date_str)
+            continue
+
+        exercises = []
+        for ex_name, ex_data in exercises_map.items():
+            sets = ex_data["sets"]
+            total_vol  = sum(s["vol"]  for s in sets)
+            total_time = sum(s["time"] for s in sets)
+            density = round(total_vol / total_time, 2) if total_time > 0 else 0
+            exercises.append({
+                "name":     ex_name,
+                "tool":     ex_data["tool"],
+                "sets":     sets,
+                "totalVol": round(total_vol, 2),
+                "density":  density,
+                "isBW":     ex_data["tool"] == "Bodyweight"
+            })
+
+        total_vol  = sum(s["vol"]  for ex in exercises for s in ex["sets"])
+        total_time = sum(s["time"] for ex in exercises for s in ex["sets"])
+        rd = round(total_vol / (total_time * bw), 4) if (total_time > 0 and bw) else 0
+        total_density = round(total_vol / total_time, 4) if total_time > 0 else 0
+
+        conn.execute(
+            "INSERT INTO sessions (user_id, date, bw, rd, total_density, exercises) VALUES (?,?,?,?,?,?)",
+            (user["id"], date_str, bw, rd, total_density, json.dumps(exercises))
+        )
+        inserted += 1
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "inserted": inserted,
+        "skipped":  skipped_dates,
+        "errors":   errors
+    }
