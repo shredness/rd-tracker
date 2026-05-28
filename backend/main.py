@@ -825,7 +825,7 @@ async def insights_ask(body: InsightsQuery, user=Depends(current_user)):
         conn.close()
         history = [dict(r) for r in rows]
 
-    answer = await call_gemini(api_key, model, context, history, q)
+    answer = await call_llm(api_key, model, context, history, q)
 
     # Persist both turns (not for demo)
     if user["role"] != "demo":
