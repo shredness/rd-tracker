@@ -14,6 +14,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzExMTExMCIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSI3MDAiIAogICAgICAgIGZpbGw9IiNFMDVBMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkE8L3RleHQ+Cjwvc3ZnPg==">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -345,21 +346,28 @@
       </div>
       <div id="phases-list" style="font-size:13px;color:var(--text3);">Loading...</div>
     </div>
-  </div>
 
-  <!-- Macro calculator -->
-  <div class="card" style="padding:16px;" id="macro-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:600;">Macro calculator</div>
-      <select id="macro-activity" style="font-size:12px;padding:4px 8px;" onchange="calcMacros()">
-        <option value="1.2">Sedentary (desk job, no exercise)</option>
-        <option value="1.375">Lightly active (1-3 days/week)</option>
-        <option value="1.55" selected>Moderately active (3-5 days/week)</option>
-        <option value="1.725">Very active (6-7 days/week)</option>
-        <option value="1.9">Extremely active (twice daily)</option>
-      </select>
+    <!-- Macro calculator -->
+    <div class="card" style="padding:16px;" id="macro-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;font-weight:600;">Macro calculator</div>
+        <select id="macro-activity" style="font-size:12px;padding:4px 8px;" onchange="calcMacros()">
+          <option value="1.2">Sedentary (desk job, no exercise)</option>
+          <option value="1.375">Lightly active (1-3 days/week)</option>
+          <option value="1.55" selected>Moderately active (3-5 days/week)</option>
+          <option value="1.725">Very active (6-7 days/week)</option>
+          <option value="1.9">Extremely active (twice daily)</option>
+        </select>
+      </div>
+      <div id="macro-output" style="font-size:13px;color:var(--text3);">Set your height, weight, date of birth, and gender in Settings to calculate macros.</div>
     </div>
-    <div id="macro-output" style="font-size:13px;color:var(--text3);">Set your height, weight, date of birth, and gender in Settings to calculate macros.</div>
+
+    <!-- Phase macro history -->
+    <div class="card" style="padding:16px;" id="phase-macro-card" style="display:none;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Macro targets by phase</div>
+      <div id="phase-macro-output" style="font-size:13px;color:var(--text3);">Loading...</div>
+    </div>
+
   </div>
 
   <!-- New phase modal -->
@@ -1659,7 +1667,6 @@ async function renderTrend() {
   const labels=trendData.map(d=>{ const p=d.week.split('/'); return p[0]+'/'+p[1]; });
   const rdV=trendData.map(d=>+d.rd.toFixed(2));
   const wtV=trendData.map(d=>+d.wt.toFixed(1));
-  // 60-day average RD - use weeks within last 60 days
   const now = new Date();
   const cutoff60 = new Date(now - 60*24*60*60*1000);
   const cutoff28 = new Date(now - 28*24*60*60*1000);
@@ -1681,10 +1688,65 @@ async function renderTrend() {
   const pk=trendData.reduce((b,d)=>d.rd>b.rd?d:b);
   document.getElementById('t-peak').textContent=pk.rd.toFixed(2);
   document.getElementById('t-peak-d').textContent=pk.week;
-  // Avg bodyweight - last 4 weeks
   const wtRecent = recent4wk.length ? recent4wk.map(d=>d.wt) : wtV;
   document.getElementById('t-wt').textContent=(wtRecent.reduce((a,v)=>a+v,0)/wtRecent.length).toFixed(1);
   if(rdV.length>=8){const r=rdV.slice(-4).reduce((a,v)=>a+v,0)/4,p=rdV.slice(-8,-4).reduce((a,v)=>a+v,0)/4,dir=r-p;document.getElementById('t-dir').textContent=(dir>=0?'+':'')+dir.toFixed(2);document.getElementById('t-dir-s').textContent=dir>=0?'▲ improving':'▼ declining';}
+
+  // ── Phase shading annotations ──
+  const PHASE_BAND_COLORS = {
+    'Weight Loss': 'rgba(239,68,68,0.10)',
+    'Cut':         'rgba(224,90,32,0.10)',
+    'Recomp':      'rgba(16,185,129,0.10)',
+    'Bulk':        'rgba(59,130,246,0.10)',
+    'Maintain':    null,
+    'Peak':        'rgba(245,158,11,0.10)',
+    'Deload':      'rgba(139,92,246,0.10)',
+  };
+  // Build label→index map for annotation xMin/xMax
+  const labelIndex = {};
+  labels.forEach((l, i) => labelIndex[l] = i);
+
+  // Convert a date string to the nearest label index
+  function dateToLabelIndex(dateStr) {
+    if (!dateStr) return labels.length - 1;
+    const d = new Date(dateStr);
+    let best = 0, bestDiff = Infinity;
+    trendData.forEach((td, i) => {
+      const parts = td.week.split('/');
+      const w = new Date(parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]));
+      const diff = Math.abs(w - d);
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    });
+    return best;
+  }
+
+  let phaseAnnotations = {};
+  try {
+    const phases = await apiFetch('/phases');
+    _allPhases = phases || [];
+    phases.forEach((ph, i) => {
+      const color = PHASE_BAND_COLORS[ph.phase_type];
+      if (!color) return;
+      const xMin = dateToLabelIndex(ph.start_date);
+      const xMax = ph.end_date ? dateToLabelIndex(ph.end_date) : labels.length - 1;
+      phaseAnnotations['phase_' + i] = {
+        type: 'box',
+        xMin, xMax,
+        backgroundColor: color,
+        borderWidth: 0,
+        label: {
+          display: true,
+          content: ph.phase_type,
+          position: { x: 'start', y: 'start' },
+          font: { size: 9, weight: '600' },
+          color: color.replace('0.10', '0.9'),
+          padding: { x: 4, y: 2 },
+          backgroundColor: 'transparent',
+        }
+      };
+    });
+  } catch(e) { /* phases non-fatal */ }
+
   if(tC)tC.destroy();
   tC=new Chart(document.getElementById('trendChart'),{
     type:'line',
@@ -1698,6 +1760,7 @@ async function renderTrend() {
       interaction:{mode:'index',intersect:false},
       plugins:{
         legend:{display:false},
+        annotation:{annotations: phaseAnnotations},
         tooltip:{callbacks:{
           label:ctx=>{
             if(ctx.dataset.yAxisID==='yWT') return ` ${ctx.parsed.y.toFixed(1)} lbs`;
@@ -3075,6 +3138,7 @@ async function confirmImport() {
 let _macroProfile  = null;
 let _macroRecomp   = null;
 let _macroPhase    = null;
+let _allPhases     = [];
 
 async function loadMacroData() {
   const out = document.getElementById('macro-output');
@@ -3085,6 +3149,7 @@ async function loadMacroData() {
   try { _macroRecomp  = await aiFetch('/recomp');  } catch(e) { _macroRecomp  = null; }
   try {
     const phases = await aiFetch('/phases');
+    _allPhases  = phases || [];
     _macroPhase = phases.find(p => !p.end_date) || null;
   } catch(e) { _macroPhase = null; }
 
@@ -3110,9 +3175,12 @@ function calcMacros() {
     return;
   }
 
-  // Current BW from recomp data, fallback to sessions
-  const currentBW = (r && r.current_bw) ? r.current_bw : null;
-  const targetBW  = p.target_bw || currentBW;
+  // Current BW: recomp data first, then latest session, then bail
+  let currentBW = (r && r.current_bw) ? r.current_bw : null;
+  if (!currentBW && sessions && sessions.length > 0) {
+    currentBW = sessions[sessions.length - 1].bw || null;
+  }
+  const targetBW = (p.target_bw && parseFloat(p.target_bw) > 0) ? parseFloat(p.target_bw) : currentBW;
   if (!currentBW) {
     out.innerHTML = '<span style="color:var(--text3);">Log at least one session to calculate macros.</span>';
     return;
@@ -3243,6 +3311,7 @@ function calcMacros() {
       <i class="ti ti-sparkles"></i> Build a meal plan with AI
     </button>
   `;
+  renderPhaseMacroHistory();
 }
 
 function askForMealPlan(prompt) {
@@ -3254,6 +3323,94 @@ function askForMealPlan(prompt) {
     autoGrow(input);
     input.focus();
   }
+}
+
+
+// ── Phase macro history ───────────────────────────────────────
+function renderPhaseMacroHistory() {
+  const card = document.getElementById('phase-macro-card');
+  const out  = document.getElementById('phase-macro-output');
+  if (!card || !out) return;
+
+  const p = _macroProfile;
+  if (!p || !p.height_in || !p.dob || !p.gender) { card.style.display = 'none'; return; }
+  if (!_allPhases || !_allPhases.length) { card.style.display = 'none'; return; }
+
+  // Need sessions to calculate average BW per phase
+  if (!sessions || !sessions.length) { card.style.display = 'none'; return; }
+
+  const activity = parseFloat(document.getElementById('macro-activity')?.value || '1.55');
+
+  // Age + BMR constants
+  const dob = new Date(p.dob);
+  const today = new Date();
+  const age = today.getFullYear() - dob.getFullYear() -
+    ((today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) ? 1 : 0);
+  const cm = parseFloat(p.height_in) * 2.54;
+
+  function getMacrosForPhase(phase, avgBW) {
+    const kg = avgBW * 0.453592;
+    const bmrM = (10 * kg) + (6.25 * cm) - (5 * age) + 5;
+    const bmrF = (10 * kg) + (6.25 * cm) - (5 * age) - 161;
+    let bmr = p.gender === 'Male' ? bmrM : p.gender === 'Female' ? bmrF : (bmrM + bmrF) / 2;
+    const tdee = Math.round(bmr * activity);
+    const type = phase.phase_type;
+    const targetBW = p.target_bw || avgBW;
+
+    let calTarget, proteinG;
+    if (type === 'Weight Loss') { calTarget = tdee - 600; proteinG = Math.round(1.0 * targetBW); }
+    else if (type === 'Cut')    { calTarget = tdee - 500; proteinG = Math.round(1.0 * targetBW); }
+    else if (type === 'Recomp') { calTarget = tdee - 200; proteinG = Math.round(1.0 * avgBW); }
+    else if (type === 'Bulk')   { calTarget = tdee + 300; proteinG = Math.round(1.2 * avgBW); }
+    else if (type === 'Peak')   { calTarget = tdee - 100; proteinG = Math.round(0.85 * avgBW); }
+    else if (type === 'Deload') { calTarget = tdee - 200; proteinG = Math.round(0.85 * avgBW); }
+    else                        { calTarget = tdee;       proteinG = Math.round(0.85 * avgBW); }
+
+    const fatG  = Math.round((calTarget * 0.28) / 9);
+    const carbG = Math.max(0, Math.round((calTarget - proteinG * 4 - fatG * 9) / 4));
+    return { calTarget, proteinG, fatG, carbG, avgBW: avgBW.toFixed(1), tdee };
+  }
+
+  card.style.display = 'block';
+  const PHASE_COLORS = {
+    'Weight Loss':'#EF4444','Cut':'#E05A20','Recomp':'#10B981',
+    'Bulk':'#3B82F6','Maintain':'#888780','Peak':'#F59E0B','Deload':'#8B5CF6'
+  };
+
+  out.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="padding:7px 8px;text-align:left;color:var(--text2);font-weight:600;">Phase</th>
+      <th style="padding:7px 8px;text-align:left;color:var(--text2);font-weight:600;">Period</th>
+      <th style="padding:7px 8px;text-align:right;color:var(--text2);font-weight:600;">Avg BW</th>
+      <th style="padding:7px 8px;text-align:right;color:var(--text2);font-weight:600;">Calories</th>
+      <th style="padding:7px 8px;text-align:right;color:var(--text2);font-weight:600;color:#10B981;">Protein</th>
+      <th style="padding:7px 8px;text-align:right;color:var(--text2);font-weight:600;color:#F59E0B;">Fat</th>
+      <th style="padding:7px 8px;text-align:right;color:var(--text2);font-weight:600;color:#3B82F6;">Carbs</th>
+    </tr></thead>
+    <tbody>${_allPhases.map(phase => {
+      // Get sessions within this phase's date range
+      const start = phase.start_date;
+      const end   = phase.end_date || new Date().toISOString().slice(0,10);
+      const phaseSessions = sessions.filter(s => s.date >= start && s.date <= end);
+      const avgBW = phaseSessions.length
+        ? phaseSessions.reduce((sum, s) => sum + s.bw, 0) / phaseSessions.length
+        : (sessions[sessions.length-1]?.bw || 0);
+      if (!avgBW) return '';
+      const m = getMacrosForPhase(phase, avgBW);
+      const color = PHASE_COLORS[phase.phase_type] || 'var(--text)';
+      const endStr = phase.end_date || 'ongoing';
+      return `<tr style="border-bottom:0.5px solid var(--border);">
+        <td style="padding:7px 8px;font-weight:600;color:${color};">${escapeHtml(phase.phase_type)}</td>
+        <td style="padding:7px 8px;color:var(--text3);font-size:11px;">${phase.start_date} - ${endStr}</td>
+        <td style="padding:7px 8px;text-align:right;color:var(--text2);">${m.avgBW} lbs</td>
+        <td style="padding:7px 8px;text-align:right;font-weight:600;color:var(--accent);">${m.calTarget}</td>
+        <td style="padding:7px 8px;text-align:right;font-weight:600;color:#10B981;">${m.proteinG}g</td>
+        <td style="padding:7px 8px;text-align:right;color:#F59E0B;">${m.fatG}g</td>
+        <td style="padding:7px 8px;text-align:right;color:#3B82F6;">${m.carbG}g</td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table>`;
 }
 
 // ── Recomp score ──────────────────────────────────────────────
