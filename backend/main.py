@@ -679,7 +679,7 @@ def get_profile(user=Depends(current_user)):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw FROM user_settings WHERE user_id=?",
+            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level FROM user_settings WHERE user_id=?",
             (user["id"],)
         ).fetchone()
     except Exception:
