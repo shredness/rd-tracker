@@ -804,30 +804,41 @@ def build_training_context(uid: int) -> str:
     lines = []
     # Load profile for richer AI context
     conn_p = get_db()
-    prof = conn_p.execute(
-        "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
-        (uid,)
-    ).fetchone()
+    try:
+        prof = conn_p.execute(
+            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw FROM user_settings WHERE user_id=?",
+            (uid,)
+        ).fetchone()
+    except Exception:
+        prof = conn_p.execute(
+            "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
+            (uid,)
+        ).fetchone()
     conn_p.close()
 
+    def prof_get(key, default=None):
+        try:
+            return prof[key]
+        except (IndexError, TypeError):
+            return default
+
     if prof:
-        name_str = " ".join(filter(None, [prof["first_name"], prof["last_name"]])) or "User"
+        name_str = " ".join(filter(None, [prof_get("first_name"), prof_get("last_name")])) or "User"
         age_str = ""
-        if prof["dob"]:
+        if prof_get("dob"):
             try:
                 from datetime import date as _date
-                dob = datetime.strptime(prof["dob"], "%Y-%m-%d").date()
+                dob = datetime.strptime(prof_get("dob"), "%Y-%m-%d").date()
                 age_str = f", age {(_date.today().year - dob.year - ((_date.today().month, _date.today().day) < (dob.month, dob.day)))}"
             except Exception:
                 pass
-        lines.append(f"Athlete: {name_str}{age_str}, gender: {prof['gender'] or 'not specified'}")
-        lines.append(f"Training week: {prof['week_start'] or 'Saturday'} through {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].index(prof['week_start'] or 'Saturday') + 6) % 7]}")
-        if prof["height_in"]:
-            ft = int(prof["height_in"] // 12)
-            ins = int(prof["height_in"] % 12)
-            lines.append(f"Height: {ft}'{ins}\" ({prof['height_in']} in)")
-        if prof["target_bw"]:
-            lines.append(f"Target bodyweight: {prof['target_bw']} lbs")
+        lines.append(f"Athlete: {name_str}{age_str}, gender: {prof_get('gender') or 'not specified'}")
+        lines.append(f"Training week: {prof_get('week_start') or 'Saturday'} through {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].index(prof_get('week_start') or 'Saturday') + 6) % 7]}")
+        if prof_get("height_in"):
+            h = float(prof_get("height_in"))
+            lines.append(f"Height: {int(h//12)}'{int(h%12)}\" ({h} in)")
+        if prof_get("target_bw"):
+            lines.append(f"Target bodyweight: {prof_get('target_bw')} lbs")
         lines.append("")
 
     # Add active phase

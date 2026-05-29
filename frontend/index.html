@@ -3333,11 +3333,12 @@ function calcMacros() {
   renderPhaseMacroHistory();
 }
 
-function askForMealPlan() {
-  // Switch to Insights tab and pre-fill the question
-  switchTab('insights');
+async function askForMealPlan() {
+  await switchTab('insights');
+  // Small defer to let openInsights() finish rendering before we set the input
+  await new Promise(r => setTimeout(r, 300));
   const input = document.getElementById('insights-input');
-  if (input) {
+  if (input && _pendingMealPrompt) {
     input.value = _pendingMealPrompt;
     autoGrow(input);
     input.focus();
