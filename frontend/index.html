@@ -3166,6 +3166,7 @@ let _macroProfile  = null;
 let _macroRecomp   = null;
 let _macroPhase    = null;
 let _allPhases     = [];
+let _pendingMealPrompt = "";
 
 async function loadMacroData() {
   const out = document.getElementById('macro-output');
@@ -3291,7 +3292,7 @@ function calcMacros() {
   const phaseColor = PHASE_COLORS[phase] || 'var(--text)';
 
   // Build meal plan prompt for Insights
-  const mealPrompt = `Based on my current ${phase.toLowerCase()} phase, my calculated macros are: ${calTarget} kcal/day, ${proteinG}g protein, ${fatG}g fat, ${carbG}g carbs. My current weight is ${currentBW} lbs${targetBW && targetBW !== currentBW ? ` and my target is ${targetBW} lbs` : ''}. Please build me a practical daily meal plan that hits these targets, keeping meals simple and prep time realistic. Include breakfast, lunch, dinner, and one snack.`;
+  _pendingMealPrompt = `Based on my current ${phase.toLowerCase()} phase, my calculated macros are: ${calTarget} kcal/day, ${proteinG}g protein, ${fatG}g fat, ${carbG}g carbs. My current weight is ${currentBW} lbs${targetBW && targetBW !== currentBW ? ` and my target is ${targetBW} lbs` : ''}. Please build me a practical daily meal plan that hits these targets, keeping meals simple and prep time realistic. Include breakfast, lunch, dinner, and one snack.`;
 
   out.innerHTML = `
     <div style="margin-bottom:12px;">
@@ -3334,19 +3335,19 @@ function calcMacros() {
         <div style="font-size:10px;color:var(--text3);">${carbCal} kcal</div>
       </div>
     </div>
-    <button class="btn btn-sm" onclick="askForMealPlan(${JSON.stringify(mealPrompt).replace(/'/g,'&#39;')})" style="font-size:12px;">
+    <button class="btn btn-sm" onclick="askForMealPlan()" style="font-size:12px;">
       <i class="ti ti-sparkles"></i> Build a meal plan with AI
     </button>
   `;
   renderPhaseMacroHistory();
 }
 
-function askForMealPlan(prompt) {
+function askForMealPlan() {
   // Switch to Insights tab and pre-fill the question
   switchTab('insights');
   const input = document.getElementById('insights-input');
   if (input) {
-    input.value = prompt;
+    input.value = _pendingMealPrompt;
     autoGrow(input);
     input.focus();
   }
