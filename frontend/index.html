@@ -492,7 +492,8 @@
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Upload a filled template to import historical sessions. Download the template first - it includes a Legend sheet explaining every field and modifier.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-export" onclick="downloadImportTemplate()">↓ Download template</button>
-        <input type="file" id="import-file" accept=".xlsx" style="font-size:12px;color:var(--text2);" onchange="previewImport(this)">
+        <button class="btn btn-export" onclick="document.getElementById('import-file').click()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);">↑ Upload file</button>
+        <input type="file" id="import-file" accept=".xlsx" style="display:none;" onchange="previewImport(this)">
       </div>
       <div id="import-preview" style="margin-top:8px;font-size:13px;color:var(--text2);"></div>
       <button class="btn btn-primary" id="import-confirm-btn" onclick="confirmImport()" style="display:none;margin-top:12px;">Import sessions</button>
