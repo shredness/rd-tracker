@@ -164,17 +164,34 @@ def init_db():
             dob          TEXT,
             gender       TEXT,
             week_start   TEXT DEFAULT 'Saturday',
+            height_in    REAL,
+            target_bw    REAL,
             updated_at   TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
     # Migrate existing rows to add new profile columns if they don't exist
     for col, default in [('first_name','NULL'),('last_name','NULL'),('dob','NULL'),
-                         ('gender','NULL'),('week_start',"'Saturday'")]:
+                         ('gender','NULL'),('week_start',"'Saturday'"),
+                         ('height_in','NULL'),('target_bw','NULL')]:
         try:
             conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} TEXT DEFAULT {default}")
         except Exception:
             pass
+
+    # Training phases table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS phases (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            phase_type TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date   TEXT,
+            notes      TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
 
     # Persisted Insights conversation history (one row per message)
     conn.execute("""
@@ -321,9 +338,17 @@ class UserCreate(BaseModel):
 class ProfileIn(BaseModel):
     first_name: Optional[str] = None
     last_name:  Optional[str] = None
-    dob:        Optional[str] = None   # YYYY-MM-DD
+    dob:        Optional[str] = None        # YYYY-MM-DD
     gender:     Optional[str] = None
-    week_start: Optional[str] = None   # Monday-Sunday
+    week_start: Optional[str] = None        # Monday-Sunday
+    height_in:  Optional[float] = None      # inches
+    target_bw:  Optional[float] = None      # lbs
+
+class PhaseIn(BaseModel):
+    phase_type: str
+    start_date: str
+    end_date:   Optional[str] = None
+    notes:      Optional[str] = None
 
 class AISettingsIn(BaseModel):
     ai_key: Optional[str] = None      # plaintext key from user; None = don't change
@@ -625,18 +650,20 @@ def get_logged_exercises(user=Depends(current_user)):
 def get_profile(user=Depends(current_user)):
     conn = get_db()
     row = conn.execute(
-        "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
+        "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw FROM user_settings WHERE user_id=?",
         (user["id"],)
     ).fetchone()
     conn.close()
     if not row:
-        return {"first_name":"","last_name":"","dob":"","gender":"","week_start":"Saturday"}
+        return {"first_name":"","last_name":"","dob":"","gender":"","week_start":"Saturday","height_in":None,"target_bw":None}
     return {
         "first_name": row["first_name"] or "",
         "last_name":  row["last_name"]  or "",
         "dob":        row["dob"]        or "",
         "gender":     row["gender"]     or "",
         "week_start": row["week_start"] or "Saturday",
+        "height_in":  row["height_in"],
+        "target_bw":  row["target_bw"],
     }
 
 @app.post("/profile")
@@ -653,15 +680,18 @@ def save_profile(body: ProfileIn, user=Depends(current_user)):
                 dob=COALESCE(?,dob),
                 gender=COALESCE(?,gender),
                 week_start=COALESCE(?,week_start),
+                height_in=COALESCE(?,height_in),
+                target_bw=COALESCE(?,target_bw),
                 updated_at=datetime('now')
             WHERE user_id=?
-        """, (body.first_name, body.last_name, body.dob, body.gender, body.week_start, user["id"]))
+        """, (body.first_name, body.last_name, body.dob, body.gender, body.week_start,
+                body.height_in, body.target_bw, user["id"]))
     else:
         conn.execute("""
-            INSERT INTO user_settings (user_id, first_name, last_name, dob, gender, week_start)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO user_settings (user_id, first_name, last_name, dob, gender, week_start, height_in, target_bw)
+            VALUES (?,?,?,?,?,?,?,?)
         """, (user["id"], body.first_name, body.last_name, body.dob, body.gender,
-                body.week_start or "Saturday"))
+                body.week_start or "Saturday", body.height_in, body.target_bw))
     conn.commit()
     conn.close()
     return {"status": "saved"}
@@ -751,7 +781,24 @@ def build_training_context(uid: int) -> str:
             except Exception:
                 pass
         lines.append(f"Athlete: {name_str}{age_str}, gender: {prof['gender'] or 'not specified'}")
-        lines.append(f"Training week: {prof['week_start'] or 'Saturday'} through {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][((['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].index(prof['week_start'] or 'Saturday') + 6) % 7)]}")
+        lines.append(f"Training week: {prof['week_start'] or 'Saturday'} through {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].index(prof['week_start'] or 'Saturday') + 6) % 7]}")
+        if prof["height_in"]:
+            ft = int(prof["height_in"] // 12)
+            ins = int(prof["height_in"] % 12)
+            lines.append(f"Height: {ft}'{ins}\" ({prof['height_in']} in)")
+        if prof["target_bw"]:
+            lines.append(f"Target bodyweight: {prof['target_bw']} lbs")
+        lines.append("")
+
+    # Add active phase
+    conn_ph = get_db()
+    active_phase = conn_ph.execute(
+        "SELECT phase_type, start_date FROM phases WHERE user_id=? AND end_date IS NULL ORDER BY start_date DESC LIMIT 1",
+        (uid,)
+    ).fetchone()
+    conn_ph.close()
+    if active_phase:
+        lines.append(f"Current training phase: {active_phase['phase_type']} (since {active_phase['start_date']})")
         lines.append("")
 
     lines.append(f"Total sessions: {len(rows)}")
@@ -1259,4 +1306,123 @@ async def import_sessions(user=Depends(current_user), file: UploadFile = File(..
         "inserted": inserted,
         "skipped":  skipped_dates,
         "errors":   errors
+    }
+
+# ── Phase endpoints ───────────────────────────────────────────
+@app.get("/phases")
+def get_phases(user=Depends(current_user)):
+    uid = data_user_id(user)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, phase_type, start_date, end_date, notes FROM phases WHERE user_id=? ORDER BY start_date DESC",
+        (uid,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/phases")
+def create_phase(body: PhaseIn, user=Depends(current_user)):
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo accounts cannot create phases")
+    # Close any open phase first
+    conn = get_db()
+    if not body.end_date:
+        conn.execute(
+            "UPDATE phases SET end_date=? WHERE user_id=? AND end_date IS NULL",
+            (body.start_date, user["id"])
+        )
+    conn.execute(
+        "INSERT INTO phases (user_id, phase_type, start_date, end_date, notes) VALUES (?,?,?,?,?)",
+        (user["id"], body.phase_type, body.start_date, body.end_date or None, body.notes or None)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "created"}
+
+@app.delete("/phases/{phase_id}")
+def delete_phase(phase_id: int, user=Depends(current_user)):
+    conn = get_db()
+    conn.execute("DELETE FROM phases WHERE id=? AND user_id=?", (phase_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+@app.put("/phases/{phase_id}/close")
+def close_phase(phase_id: int, user=Depends(current_user)):
+    from datetime import date as _date
+    today = _date.today().strftime("%Y-%m-%d")
+    conn = get_db()
+    conn.execute(
+        "UPDATE phases SET end_date=? WHERE id=? AND user_id=? AND end_date IS NULL",
+        (today, phase_id, user["id"])
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "closed"}
+
+
+# ── Recomposition score ───────────────────────────────────────
+@app.get("/recomp")
+def get_recomp(user=Depends(current_user)):
+    """
+    Recomp score: measures whether RD is rising while BW is falling.
+    Uses last 8 weeks of data. Returns a score and trend interpretation.
+    Score: positive = gaining strength while losing weight (ideal recomp)
+           near zero = maintaining
+           negative  = losing strength relative to bodyweight
+    """
+    uid = data_user_id(user)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT date, bw, rd FROM sessions WHERE user_id=? ORDER BY date DESC LIMIT 60",
+        (uid,)
+    ).fetchall()
+    # Also get target_bw
+    settings = conn.execute("SELECT target_bw FROM user_settings WHERE user_id=?", (uid,)).fetchone()
+    conn.close()
+
+    if len(rows) < 4:
+        return {"score": None, "label": "Not enough data", "bw_trend": None, "rd_trend": None, "target_bw": settings["target_bw"] if settings else None}
+
+    rows = list(reversed(rows))  # chronological
+    # Split into two halves
+    mid = len(rows) // 2
+    first_half  = rows[:mid]
+    second_half = rows[mid:]
+
+    avg_rd_early = sum(r["rd"] for r in first_half)  / len(first_half)
+    avg_rd_late  = sum(r["rd"] for r in second_half) / len(second_half)
+    avg_bw_early = sum(r["bw"] for r in first_half)  / len(first_half)
+    avg_bw_late  = sum(r["bw"] for r in second_half) / len(second_half)
+
+    bw_trend = round(avg_bw_late - avg_bw_early, 1)   # negative = losing weight
+    rd_trend = round(avg_rd_late - avg_rd_early, 3)    # positive = getting stronger
+
+    # Score: RD change normalised, penalised if BW is rising (bulk is fine but label differently)
+    score = round(rd_trend * 100, 1)
+
+    if rd_trend > 0.02 and bw_trend < 0:
+        label = "Recomping"
+    elif rd_trend > 0.02 and bw_trend >= 0:
+        label = "Building"
+    elif abs(rd_trend) <= 0.02 and bw_trend < -0.5:
+        label = "Cutting"
+    elif abs(rd_trend) <= 0.02:
+        label = "Maintaining"
+    else:
+        label = "Regressing"
+
+    # Current bw vs target
+    current_bw = rows[-1]["bw"] if rows else None
+    target_bw  = settings["target_bw"] if settings else None
+    to_goal    = round(current_bw - target_bw, 1) if (current_bw and target_bw) else None
+
+    return {
+        "score":      score,
+        "label":      label,
+        "bw_trend":   bw_trend,
+        "rd_trend":   rd_trend,
+        "current_bw": current_bw,
+        "target_bw":  target_bw,
+        "to_goal":    to_goal,
     }

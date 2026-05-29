@@ -302,6 +302,23 @@
       <div class="metric"><div class="metric-label">4-week trend</div><div class="metric-value" id="t-dir">-</div><div class="metric-sub" id="t-dir-s">vs prior 4wk</div></div>
       <div class="metric"><div class="metric-label">Peak week</div><div class="metric-value" id="t-peak">-</div><div class="metric-sub" id="t-peak-d">-</div></div>
     </div>
+
+    <!-- Recomp score + target BW progress -->
+    <div id="recomp-card" class="card" style="padding:16px;display:none;">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;">
+        <div style="flex:1;min-width:140px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:14px;text-align:center;">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Phase</div>
+          <div style="font-size:22px;font-weight:700;" id="recomp-label">-</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;" id="recomp-trends">-</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:14px;text-align:center;" id="recomp-goal-card">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">To goal</div>
+          <div style="font-size:22px;font-weight:700;" id="recomp-to-goal">-</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;" id="recomp-goal-sub">lbs remaining</div>
+        </div>
+      </div>
+    </div>
+
     <div class="card" style="padding:16px;">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
         <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
@@ -317,7 +334,65 @@
       <div style="position:relative;width:100%;height:320px;">
         <canvas id="trendChart" role="img" aria-label="RD and bodyweight trend overlaid"></canvas>
       </div>
-      <p style="font-size:11px;color:var(--text3);margin-top:8px;">Weekly averages (Sat–Thu). RD higher = stronger relative to bodyweight.</p>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px;" id="trend-week-label">Weekly averages. RD higher = stronger relative to bodyweight.</p>
+    </div>
+
+    <!-- Phase management -->
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;font-weight:600;">Training phases</div>
+        <button class="btn btn-sm" onclick="openNewPhaseModal()">+ New phase</button>
+      </div>
+      <div id="phases-list" style="font-size:13px;color:var(--text3);">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Macro calculator -->
+  <div class="card" style="padding:16px;" id="macro-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:600;">Macro calculator</div>
+      <select id="macro-activity" style="font-size:12px;padding:4px 8px;" onchange="calcMacros()">
+        <option value="1.2">Sedentary (desk job, no exercise)</option>
+        <option value="1.375">Lightly active (1-3 days/week)</option>
+        <option value="1.55" selected>Moderately active (3-5 days/week)</option>
+        <option value="1.725">Very active (6-7 days/week)</option>
+        <option value="1.9">Extremely active (twice daily)</option>
+      </select>
+    </div>
+    <div id="macro-output" style="font-size:13px;color:var(--text3);">Set your height, weight, date of birth, and gender in Settings to calculate macros.</div>
+  </div>
+
+  <!-- New phase modal -->
+  <div class="modal-overlay" id="phase-modal" style="display:none;" onclick="if(event.target===this)closePhaseModal()">
+    <div class="modal" style="max-width:400px;">
+      <h3>New training phase</h3>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>Phase type</label>
+        <select id="phase-type" style="width:100%;">
+          <option value="Cut">Cut</option>
+          <option value="Bulk">Bulk</option>
+          <option value="Maintain">Maintain</option>
+          <option value="Recomp">Recomp</option>
+          <option value="Peak">Peak</option>
+          <option value="Deload">Deload</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>Start date</label>
+        <input type="date" id="phase-start" style="width:100%;">
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>End date <span style="color:var(--text3);font-weight:400;">(leave blank = ongoing)</span></label>
+        <input type="date" id="phase-end" style="width:100%;">
+      </div>
+      <div class="form-group" style="margin-bottom:4px;">
+        <label>Notes <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+        <input type="text" id="phase-notes" style="width:100%;" placeholder="e.g. Pre-contest cut">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm" onclick="closePhaseModal()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="savePhase()">Save phase</button>
+      </div>
     </div>
   </div>
 
@@ -535,7 +610,7 @@
 
 <!-- Settings modal -->
 <div class="modal-overlay" id="settings-modal" style="display:none;" onclick="if(event.target===this)closeSettings()">
-  <div class="modal" style="max-width:480px;">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto;">
     <h3>Settings</h3>
 
     <!-- ── Profile ── -->
@@ -563,6 +638,21 @@
           <option value="Female">Female</option>
           <option value="Other">Other</option>
         </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group">
+        <label>Height</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" id="s-height-ft" min="4" max="7" style="width:60px;" placeholder="ft">
+          <span style="color:var(--text3);font-size:13px;">ft</span>
+          <input type="number" id="s-height-in" min="0" max="11" style="width:60px;" placeholder="in">
+          <span style="color:var(--text3);font-size:13px;">in</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Target bodyweight (lbs)</label>
+        <input type="number" id="s-target-bw" min="80" max="400" step="0.5" style="width:100%;" placeholder="e.g. 185">
       </div>
     </div>
     <div class="form-group" style="margin-bottom:4px;">
@@ -963,6 +1053,7 @@ function switchTab(name) {
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
   if (name==='export') updateExportSummary();
+  if (name==='trend') { loadRecompScore(); loadPhases(); loadMacroData(); }
   if (name==='insights') openInsights();
   if (name==='users') loadUsers();
 }
@@ -2747,6 +2838,11 @@ async function loadSettingsProfile() {
     document.getElementById('s-dob').value         = p.dob         || '';
     document.getElementById('s-gender').value      = p.gender      || '';
     document.getElementById('s-week-start').value  = p.week_start  || 'Saturday';
+    if (p.height_in) {
+      document.getElementById('s-height-ft').value = Math.floor(p.height_in / 12);
+      document.getElementById('s-height-in').value = Math.round(p.height_in % 12);
+    }
+    document.getElementById('s-target-bw').value  = p.target_bw   || '';
   } catch(e) { /* non-fatal */ }
 }
 
@@ -2759,6 +2855,9 @@ async function saveSettingsProfile() {
     setTimeout(() => msg.style.display = 'none', 3000);
   };
   try {
+    const ft = parseFloat(document.getElementById('s-height-ft').value) || 0;
+    const inn = parseFloat(document.getElementById('s-height-in').value) || 0;
+    const heightIn = (ft > 0 || inn > 0) ? (ft * 12 + inn) : null;
     await aiFetch('/profile', {
       method: 'POST',
       body: JSON.stringify({
@@ -2767,6 +2866,8 @@ async function saveSettingsProfile() {
         dob:        document.getElementById('s-dob').value          || null,
         gender:     document.getElementById('s-gender').value       || null,
         week_start: document.getElementById('s-week-start').value   || 'Saturday',
+        height_in:  heightIn,
+        target_bw:  parseFloat(document.getElementById('s-target-bw').value) || null,
       })
     });
     show('Profile saved.', false);
@@ -2888,6 +2989,289 @@ async function confirmImport() {
     btn.disabled = false;
     btn.textContent = 'Import sessions';
   }
+}
+
+
+
+// ── Macro calculator ──────────────────────────────────────────
+let _macroProfile  = null;
+let _macroRecomp   = null;
+let _macroPhase    = null;
+
+async function loadMacroData() {
+  try {
+    [_macroProfile, _macroRecomp] = await Promise.all([
+      aiFetch('/profile'),
+      aiFetch('/recomp')
+    ]);
+    // Get active phase
+    const phases = await aiFetch('/phases');
+    _macroPhase = phases.find(p => !p.end_date) || null;
+  } catch(e) { /* non-fatal */ }
+  calcMacros();
+}
+
+function calcMacros() {
+  const out = document.getElementById('macro-output');
+  if (!out) return;
+
+  const p = _macroProfile;
+  const r = _macroRecomp;
+
+  if (!p || !p.height_in || !p.dob || !p.gender) {
+    out.innerHTML = '<span style="color:var(--text3);">Set your height, date of birth, and gender in Settings to calculate macros.</span>';
+    return;
+  }
+
+  // Current BW from recomp data, fallback to sessions
+  const currentBW = (r && r.current_bw) ? r.current_bw : null;
+  const targetBW  = p.target_bw || currentBW;
+  if (!currentBW) {
+    out.innerHTML = '<span style="color:var(--text3);">Log at least one session to calculate macros.</span>';
+    return;
+  }
+
+  // Age from DOB
+  const dob = new Date(p.dob);
+  const today = new Date();
+  const age = today.getFullYear() - dob.getFullYear() -
+    ((today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) ? 1 : 0);
+
+  // Unit conversions
+  const kg = currentBW * 0.453592;
+  const cm = p.height_in * 2.54;
+
+  // BMR (Mifflin-St Jeor)
+  const bmrM = (10 * kg) + (6.25 * cm) - (5 * age) + 5;
+  const bmrF = (10 * kg) + (6.25 * cm) - (5 * age) - 161;
+  let bmr;
+  if (p.gender === 'Male')        bmr = bmrM;
+  else if (p.gender === 'Female') bmr = bmrF;
+  else                            bmr = (bmrM + bmrF) / 2;
+
+  // TDEE
+  const activity = parseFloat(document.getElementById('macro-activity')?.value || '1.55');
+  const tdee = Math.round(bmr * activity);
+
+  // Phase-based caloric target and protein anchor
+  const phase = _macroPhase?.phase_type || 'Maintain';
+  let calTarget, proteinG, phaseAdj, proteinNote;
+
+  if (phase === 'Bulk') {
+    calTarget   = tdee + 300;
+    proteinG    = Math.round(1.2 * currentBW);
+    phaseAdj    = '+300 kcal surplus';
+    proteinNote = '1.2g per lb (building)';
+  } else if (phase === 'Cut') {
+    calTarget   = tdee - 500;
+    proteinG    = Math.round(1.0 * (targetBW || currentBW));
+    phaseAdj    = '-500 kcal deficit';
+    proteinNote = '1.0g per lb of target BW (muscle sparing)';
+  } else if (phase === 'Recomp') {
+    calTarget   = tdee - 200;
+    proteinG    = Math.round(1.0 * currentBW);
+    phaseAdj    = '-200 kcal mild deficit';
+    proteinNote = '1.0g per lb (recomping)';
+  } else if (phase === 'Peak') {
+    calTarget   = tdee - 100;
+    proteinG    = Math.round(0.85 * currentBW);
+    phaseAdj    = '-100 kcal (fine-tuning)';
+    proteinNote = '0.85g per lb';
+  } else if (phase === 'Deload') {
+    calTarget   = tdee - 200;
+    proteinG    = Math.round(0.85 * currentBW);
+    phaseAdj    = '-200 kcal';
+    proteinNote = '0.85g per lb';
+  } else { // Maintain
+    calTarget   = tdee;
+    proteinG    = Math.round(0.85 * currentBW);
+    phaseAdj    = 'maintenance';
+    proteinNote = '0.85g per lb';
+  }
+
+  // Macros
+  const proteinCal = proteinG * 4;
+  const fatG       = Math.round((calTarget * 0.28) / 9);
+  const fatCal     = fatG * 9;
+  const carbG      = Math.max(0, Math.round((calTarget - proteinCal - fatCal) / 4));
+  const carbCal    = carbG * 4;
+
+  // Color for phase label
+  const PHASE_COLORS = {
+    'Cut':'#E05A20','Bulk':'#3B82F6','Maintain':'#888780',
+    'Recomp':'#10B981','Peak':'#F59E0B','Deload':'#8B5CF6'
+  };
+  const phaseColor = PHASE_COLORS[phase] || 'var(--text)';
+
+  // Build meal plan prompt for Insights
+  const mealPrompt = `Based on my current ${phase.toLowerCase()} phase, my calculated macros are: ${calTarget} kcal/day, ${proteinG}g protein, ${fatG}g fat, ${carbG}g carbs. My current weight is ${currentBW} lbs${targetBW && targetBW !== currentBW ? ` and my target is ${targetBW} lbs` : ''}. Please build me a practical daily meal plan that hits these targets, keeping meals simple and prep time realistic. Include breakfast, lunch, dinner, and one snack.`;
+
+  out.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <span style="font-size:12px;color:var(--text3);">Phase: </span>
+      <span style="font-weight:600;color:${phaseColor};">${phase}</span>
+      <span style="font-size:11px;color:var(--text3);margin-left:8px;">${phaseAdj}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">BMR</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text);">${Math.round(bmr)}</div>
+        <div style="font-size:10px;color:var(--text3);">kcal at rest</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">TDEE</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text);">${tdee}</div>
+        <div style="font-size:10px;color:var(--text3);">kcal maintenance</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">TARGET</div>
+        <div style="font-size:18px;font-weight:700;color:var(--accent);">${calTarget}</div>
+        <div style="font-size:10px;color:var(--text3);">kcal/day</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">PROTEIN</div>
+        <div style="font-size:20px;font-weight:700;color:#10B981;">${proteinG}g</div>
+        <div style="font-size:10px;color:var(--text3);">${proteinCal} kcal</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${proteinNote}</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">FAT</div>
+        <div style="font-size:20px;font-weight:700;color:#F59E0B;">${fatG}g</div>
+        <div style="font-size:10px;color:var(--text3);">${fatCal} kcal · 28%</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;">CARBS</div>
+        <div style="font-size:20px;font-weight:700;color:#3B82F6;">${carbG}g</div>
+        <div style="font-size:10px;color:var(--text3);">${carbCal} kcal</div>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="askForMealPlan(${JSON.stringify(mealPrompt).replace(/'/g,'&#39;')})" style="font-size:12px;">
+      <i class="ti ti-sparkles"></i> Build a meal plan with AI
+    </button>
+  `;
+}
+
+function askForMealPlan(prompt) {
+  // Switch to Insights tab and pre-fill the question
+  switchTab('insights');
+  const input = document.getElementById('insights-input');
+  if (input) {
+    input.value = prompt;
+    autoGrow(input);
+    input.focus();
+  }
+}
+
+// ── Recomp score ──────────────────────────────────────────────
+async function loadRecompScore() {
+  try {
+    const d = await aiFetch('/recomp');
+    const card = document.getElementById('recomp-card');
+    if (!d.label || d.score === null) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+
+    const labelEl = document.getElementById('recomp-label');
+    const colors = { 'Recomping':'#10B981', 'Building':'#3B82F6', 'Cutting':'var(--accent)',
+                     'Maintaining':'var(--text2)', 'Regressing':'#EF4444' };
+    labelEl.textContent = d.label;
+    labelEl.style.color = colors[d.label] || 'var(--text)';
+
+    const bwArrow = d.bw_trend < 0 ? '▼' : d.bw_trend > 0 ? '▲' : '-';
+    const rdArrow = d.rd_trend > 0 ? '▲' : d.rd_trend < 0 ? '▼' : '-';
+    document.getElementById('recomp-trends').textContent =
+      `BW ${bwArrow} ${Math.abs(d.bw_trend).toFixed(1)} lbs  RD ${rdArrow} ${Math.abs(d.rd_trend).toFixed(3)}`;
+
+    const goalCard = document.getElementById('recomp-goal-card');
+    if (d.to_goal !== null) {
+      goalCard.style.display = '';
+      const toGoalEl = document.getElementById('recomp-to-goal');
+      toGoalEl.textContent = Math.abs(d.to_goal).toFixed(1);
+      toGoalEl.style.color = d.to_goal <= 0 ? '#10B981' : 'var(--accent)';
+      document.getElementById('recomp-goal-sub').textContent =
+        d.to_goal <= 0 ? 'Goal reached!' : `lbs to ${d.target_bw} lbs`;
+    } else {
+      goalCard.style.display = 'none';
+    }
+  } catch(e) { document.getElementById('recomp-card').style.display = 'none'; }
+}
+
+// ── Phase management ──────────────────────────────────────────
+const PHASE_COLORS = {
+  'Cut':'#E05A20', 'Bulk':'#3B82F6', 'Maintain':'#888780',
+  'Recomp':'#10B981', 'Peak':'#F59E0B', 'Deload':'#8B5CF6'
+};
+
+async function loadPhases() {
+  const list = document.getElementById('phases-list');
+  if (!list) return;
+  try {
+    const phases = await aiFetch('/phases');
+    if (!phases.length) {
+      list.innerHTML = '<span style="color:var(--text3);font-size:13px;">No phases logged yet. Add one to track your cut, bulk, or recomp cycles.</span>';
+      return;
+    }
+    list.innerHTML = phases.map(p => {
+      const color = PHASE_COLORS[p.phase_type] || 'var(--text2)';
+      const endStr = p.end_date || '<span style="color:#10B981;">Ongoing</span>';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+        <span style="font-weight:600;color:${color};min-width:80px;">${escapeHtml(p.phase_type)}</span>
+        <span style="color:var(--text2);font-size:12px;">${p.start_date} - ${endStr}</span>
+        ${p.notes ? `<span style="color:var(--text3);font-size:12px;flex:1;">${escapeHtml(p.notes)}</span>` : '<span style="flex:1;"></span>'}
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          ${!p.end_date ? `<button class="btn btn-sm" onclick="closePhase(${p.id})" style="font-size:11px;">Close</button>` : ''}
+          <button class="btn btn-sm btn-danger" onclick="deletePhase(${p.id})" style="font-size:11px;">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<span style="color:var(--red-text);">Could not load phases.</span>';
+  }
+}
+
+function openNewPhaseModal() {
+  document.getElementById('phase-modal').style.display = 'flex';
+  document.getElementById('phase-start').value = new Date().toISOString().slice(0,10);
+  document.getElementById('phase-end').value = '';
+  document.getElementById('phase-notes').value = '';
+}
+
+function closePhaseModal() {
+  document.getElementById('phase-modal').style.display = 'none';
+}
+
+async function savePhase() {
+  const body = {
+    phase_type: document.getElementById('phase-type').value,
+    start_date: document.getElementById('phase-start').value,
+    end_date:   document.getElementById('phase-end').value   || null,
+    notes:      document.getElementById('phase-notes').value || null,
+  };
+  if (!body.start_date) { showToast('Start date is required'); return; }
+  try {
+    await aiFetch('/phases', { method:'POST', body: JSON.stringify(body) });
+    closePhaseModal();
+    await loadPhases();
+    await loadRecompScore();
+  } catch(e) { showToast(e.message); }
+}
+
+async function closePhase(id) {
+  try {
+    await aiFetch(`/phases/${id}/close`, { method:'PUT' });
+    await loadPhases();
+    await loadRecompScore();
+  } catch(e) { showToast(e.message); }
+}
+
+async function deletePhase(id) {
+  if (!confirm('Delete this phase?')) return;
+  try {
+    await aiFetch(`/phases/${id}`, { method:'DELETE' });
+    await loadPhases();
+  } catch(e) { showToast(e.message); }
 }
 
 function showToast(msg) {
