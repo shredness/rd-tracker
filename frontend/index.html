@@ -185,6 +185,13 @@
   .modal .form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 4px; }
   .modal .form-group input, .modal .form-group select { width: 100%; }
   .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .guide-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 0.5px solid var(--border); }
+  .guide-section:last-child { border-bottom: none; }
+  .guide-section p { font-size: 13px; color: var(--text2); line-height: 1.6; margin: 6px 0 10px; }
+  .guide-section ul { margin: 0 0 0 16px; padding: 0; font-size: 12px; color: var(--text2); line-height: 1.8; }
+  .guide-section li { margin-bottom: 2px; }
+  .guide-tab-label { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .guide-tab-label i { color: var(--accent); font-size: 15px; }
   .insights-messages { display: flex; flex-direction: column; gap: 14px; min-height: 280px; max-height: 56vh; overflow-y: auto; padding: 8px 2px 16px; }
   .insights-msg { max-width: 88%; padding: 11px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
   .insights-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
@@ -225,7 +232,7 @@
   <div class="app-header">
     <h1>Agon</h1>
     <div id="header-right" style="display:flex;align-items:center;gap:10px;margin-left:auto;">
-      <button class="theme-toggle" id="settings-btn" onclick="openSettings()" title="Settings" aria-label="Settings" style="display:none;font-size:16px;">⚙</button>
+      <button class="theme-toggle" onclick="openGuide()" title="User guide" aria-label="User guide" style="font-size:15px;font-weight:700;">?</button>
       <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">🌙</button>
     </div>
   </div>
@@ -1022,7 +1029,7 @@ function applyRoleUI() {
     badge.id = 'user-badge';
     badge.style.cssText = 'display:flex;align-items:center;gap:8px;';
     badge.innerHTML = `
-      <span style="font-size:12px;color:var(--text2);">${escapeHtml(currentUser.username)}</span>
+      <span onclick="openSettings()" title="Settings &amp; Profile" style="font-size:12px;color:var(--text2);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border);">${escapeHtml(currentUser.username)}</span>
       ${isDemo ? '<span style="font-size:10px;background:var(--accent-bg);color:var(--accent-text);padding:2px 7px;border-radius:20px;font-weight:600;">DEMO</span>' : ''}
       <button class="theme-toggle" onclick="logout()" title="Sign out" style="font-size:13px;">↩</button>
     `;
@@ -1030,9 +1037,6 @@ function applyRoleUI() {
     const themeBtn = document.getElementById('theme-btn');
     if (themeBtn) headerRight.insertBefore(badge, themeBtn);
   }
-  // Show settings gear (all roles can open it; demo just can't save)
-  const sb = document.getElementById('settings-btn');
-  if (sb) sb.style.display = '';
 
   // If demo, start on history tab
   if (isDemo) switchTab('history');
@@ -3544,6 +3548,13 @@ async function deletePhase(id) {
   } catch(e) { showToast(e.message); }
 }
 
+function openGuide() {
+  document.getElementById('guide-modal').style.display = 'flex';
+}
+function closeGuide() {
+  document.getElementById('guide-modal').style.display = 'none';
+}
+
 function showToast(msg) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');
@@ -3552,5 +3563,82 @@ function showToast(msg) {
 
 // init() is called by bootstrap after auth
 </script>
+
+<!-- User guide modal -->
+<div class="modal-overlay" id="guide-modal" style="display:none;" onclick="if(event.target===this)closeGuide()">
+  <div class="modal" style="max-width:600px;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;">Agon — User guide</h3>
+      <button class="btn btn-sm" onclick="closeGuide()">Close</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.6;">
+      Agon tracks <strong>Relative Density (RD)</strong> - your total session volume divided by total time multiplied by bodyweight. A rising RD means you are getting stronger relative to your bodyweight, regardless of whether that weight is going up or down.
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-barbell"></i> Workout</div>
+      <p>Log each training session here. Set the date, your bodyweight, and optional session notes. Add exercises one by one - each set gets its own load, reps, and time. The app calculates volume, density, and RD automatically as you build the session. Hit Save to commit. Saved sessions appear in History.</p>
+      <ul>
+        <li><strong>Bar type</strong> - toggle between Standard (total weight) and Vitruvian (weight per side x2)</li>
+        <li><strong>Bodyweight exercises</strong> - choose Normal, Vest (adds lbs), or Assisted (subtracts %)</li>
+        <li><strong>Crown icon 👑</strong> in History - flags when an exercise hit its rep trigger (50 reps at same load), signaling time to increase weight</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-history"></i> History</div>
+      <p>Filterable log of all sessions. Defaults to the current month. Use the date range and exercise filter to look further back. Edit or delete sessions from here. The delta badge shows RD change vs the prior session.</p>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-trending-up"></i> Trend</div>
+      <p>Weekly RD and bodyweight overlaid on a dual-axis chart. Colored bands show your training phases (Weight Loss, Cut, Recomp, Bulk, etc). The Recomp score card tells you whether you are building strength while losing weight, maintaining, or regressing.</p>
+      <ul>
+        <li><strong>Training phases</strong> - add phases to track your training cycles. Phases inform the AI and the macro calculator</li>
+        <li><strong>Macro calculator</strong> - computes BMR, TDEE, and daily macro targets based on your profile and current phase. The "Build a meal plan with AI" button pre-fills the Insights tab with a prompt based on your macros</li>
+        <li><strong>Macro targets by phase</strong> - retroactive macro history across all logged phases using average bodyweight per phase period</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-target"></i> Progress</div>
+      <p>Per-exercise analysis. Select any logged exercise to see top-set load over time, estimated 1RM (Epley formula), PR table by rep count, and 4-week volume trend. The 7-day volume and Strength vs Peak cards show how the selected exercise is tracking. The Strength Maintenance table at the bottom shows current vs peak load for every exercise with a color-coded ratio.</p>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-sparkles"></i> Insights</div>
+      <p>AI-powered analysis of your training data. Ask plain-English questions and get answers grounded in your actual session history, profile, active phase, and protocols. Requires a Gemini or Claude API key set in Settings. Conversation persists across sessions.</p>
+      <ul>
+        <li>Example questions: "Am I losing strength on my pulls?", "Which sessions had the best RD?", "How does my RD compare between my Weight Loss and Recomp phases?"</li>
+        <li>The "Build a meal plan with AI" button on the Trend tab sends your macro targets directly here</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-list-details"></i> Exercises</div>
+      <p>The shared exercise bank. Add, edit, or remove exercises. Each exercise has a tool type (Bar, Cable, Dumbbell, Kettlebell, Machine, Bodyweight), a multiplier that determines how load is calculated, muscle group tags, and a load hint. Changes apply to all users.</p>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label"><i class="ti ti-file-download"></i> Data</div>
+      <p>Import and export your session data as Excel files.</p>
+      <ul>
+        <li><strong>Import</strong> - download the template, fill it out (each row is one set), upload it. The Phase column is optional but will create phase records automatically from consecutive same-phase dates</li>
+        <li><strong>Export</strong> - downloads a full Log sheet (all sets with Phase column), a Trend sheet (weekly averages), and an ExerciseBank sheet</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-tab-label">Settings (click your username)</div>
+      <p>Opens via clicking your username in the top-right corner.</p>
+      <ul>
+        <li><strong>Profile</strong> - name, DOB, gender, height, target bodyweight, training week start, activity level. Used by the macro calculator and AI Insights</li>
+        <li><strong>Protocols</strong> - supplements, peptides, and medications. Passed to the AI as context only. Agon does not provide medical advice</li>
+        <li><strong>Account</strong> - change your password</li>
+        <li><strong>AI Insights</strong> - connect a Gemini or Claude API key. Keys are encrypted and stored on your server</li>
+      </ul>
+    </div>
+  </div>
+</div>
 </body>
 </html>
