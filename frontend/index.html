@@ -1073,7 +1073,15 @@ function switchTab(name) {
     const cb=document.getElementById('cancel-edit-btn');
     if (cb && cb.style.display !== 'none' && !window._editSessionActive) { cancelEdit(); return; }
   }
-  if (name==='history') populateHistoryExerciseFilter();
+  if (name==='history') {
+    // Default to current month if no filter set
+    const fromEl = document.getElementById('hist-from');
+    if (fromEl && !fromEl.value) {
+      const now = new Date();
+      fromEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    }
+    populateHistoryExerciseFilter();
+  }
   if (name==='bank') renderBankTable();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
