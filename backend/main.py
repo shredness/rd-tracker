@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional
 import sqlite3, json, os
+import httpx
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
@@ -371,9 +372,6 @@ class ProtocolIn(BaseModel):
     frequency: Optional[str] = None
     notes:     Optional[str] = None
 
-class ProtocolsBulkIn(BaseModel):
-    protocols: list
-
 class PhaseIn(BaseModel):
     phase_type: str
     start_date: str
@@ -527,12 +525,8 @@ def get_trend(user=Depends(current_user)):
     rows = conn.execute(
         "SELECT date, bw, rd FROM sessions WHERE user_id=? ORDER BY date ASC", (uid,)
     ).fetchall()
+    settings_row = conn.execute("SELECT week_start FROM user_settings WHERE user_id=?", (uid,)).fetchone()
     conn.close()
-
-    # Determine week_start preference (defaults to Saturday)
-    conn2 = get_db()
-    settings_row = conn2.execute("SELECT week_start FROM user_settings WHERE user_id=?", (uid,)).fetchone()
-    conn2.close()
     week_start_pref = (settings_row["week_start"] if settings_row and settings_row["week_start"] else "Saturday")
 
     # weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
@@ -751,10 +745,10 @@ def get_ai_settings(user=Depends(current_user)):
                        (user["id"],)).fetchone()
     conn.close()
     if not row or not row["ai_key_enc"]:
-        return {"has_key": False, "masked": "", "model": (row["ai_model"] if row else "gemini-1.5-flash")}
+        return {"has_key": False, "masked": "", "model": (row["ai_model"] if row else "gemini-2.5-flash")}
     plain = decrypt_secret(row["ai_key_enc"])
     masked = ("•" * max(0, len(plain) - 4) + plain[-4:]) if plain else ""
-    return {"has_key": bool(plain), "masked": masked, "model": row["ai_model"] or "gemini-1.5-flash"}
+    return {"has_key": bool(plain), "masked": masked, "model": row["ai_model"] or "gemini-2.5-flash"}
 
 @app.post("/ai/settings")
 def save_ai_settings(body: AISettingsIn, user=Depends(current_user)):
@@ -802,24 +796,25 @@ def build_training_context(uid: int) -> str:
         "SELECT date, bw, rd, total_density, exercises, notes FROM sessions WHERE user_id=? ORDER BY date",
         (uid,)
     ).fetchall()
-    conn.close()
     if not rows:
+        conn.close()
         return "No training sessions logged yet."
 
     lines = []
     # Load profile for richer AI context
-    conn_p = get_db()
     try:
-        prof = conn_p.execute(
+        prof = conn.execute(
             "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw FROM user_settings WHERE user_id=?",
             (uid,)
         ).fetchone()
     except Exception:
-        prof = conn_p.execute(
-            "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
-            (uid,)
-        ).fetchone()
-    conn_p.close()
+        try:
+            prof = conn.execute(
+                "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
+                (uid,)
+            ).fetchone()
+        except Exception:
+            prof = None
 
     def prof_get(key, default=None):
         try:
@@ -847,12 +842,16 @@ def build_training_context(uid: int) -> str:
         lines.append("")
 
     # Add active phase
-    conn_ph = get_db()
-    active_phase = conn_ph.execute(
+    active_phase = conn.execute(
         "SELECT phase_type, start_date FROM phases WHERE user_id=? AND end_date IS NULL ORDER BY start_date DESC LIMIT 1",
         (uid,)
     ).fetchone()
-    conn_ph.close()
+    # Add active protocols
+    protos = conn.execute(
+        "SELECT name, dose, frequency, notes FROM protocols WHERE user_id=? ORDER BY sort_order, id",
+        (uid,)
+    ).fetchall()
+    conn.close()
     if active_phase:
         lines.append(f"Current training phase: {active_phase['phase_type']} (since {active_phase['start_date']})")
         lines.append("")
@@ -898,14 +897,12 @@ def _is_claude_model(model: str) -> bool:
 
 async def call_llm(api_key: str, model: str, context: str, history: list, question: str) -> str:
     """Route to Gemini or Anthropic depending on the model name."""
-    import httpx
     if _is_claude_model(model):
         return await _call_anthropic(api_key, model, context, history, question)
     return await _call_gemini(api_key, model, context, history, question)
 
 async def _call_gemini(api_key: str, model: str, context: str, history: list, question: str) -> str:
     """Call the Gemini API with training context + conversation history."""
-    import httpx
     url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
     contents = []
     contents.append({
@@ -935,7 +932,6 @@ async def _call_gemini(api_key: str, model: str, context: str, history: list, qu
 
 async def _call_anthropic(api_key: str, model: str, context: str, history: list, question: str) -> str:
     """Call the Anthropic Messages API with training context + conversation history."""
-    import httpx
     url = "https://api.anthropic.com/v1/messages"
     messages = []
     # Prior conversation turns
@@ -1040,9 +1036,8 @@ async def insights_ask(body: InsightsQuery, user=Depends(current_user)):
 @app.post("/ai/test")
 async def test_ai_key(body: AISettingsIn, user=Depends(current_user)):
     """Test a Gemini key with a trivial call. Uses provided key, or stored key if none given."""
-    import httpx
     key = (body.ai_key or "").strip()
-    model = body.ai_model or "gemini-1.5-flash"
+    model = body.ai_model or "gemini-2.5-flash"
     if not key:
         conn = get_db()
         row = conn.execute("SELECT ai_key_enc FROM user_settings WHERE user_id=?",
@@ -1054,7 +1049,6 @@ async def test_ai_key(body: AISettingsIn, user=Depends(current_user)):
         raise HTTPException(status_code=400, detail="No key to test")
 
     try:
-        import httpx
         if _is_claude_model(model):
             url = "https://api.anthropic.com/v1/messages"
             headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
@@ -1091,7 +1085,6 @@ def download_import_template(user=Depends(current_user)):
     headers = ["Date", "Bodyweight (lbs)", "Exercise", "Tool", "Modifier", "Load", "Reps", "Time (min)", "Phase"]
     header_fill = PatternFill("solid", fgColor="1A1A18")
     header_font = Font(bold=True, color="E05A20")
-    thin = Side(style="thin", color="444444")
     border = Border(bottom=Side(style="thin", color="444444"))
 
     for col, h in enumerate(headers, 1):

@@ -820,6 +820,20 @@
 </div>
 
 <script>
+// ── One-time localStorage key migration (prometheus -> agon) ──
+(function() {
+  try {
+    if (localStorage.getItem('prometheus-token') && !localStorage.getItem('agon-token')) {
+      localStorage.setItem('agon-token', localStorage.getItem('prometheus-token'));
+    }
+    if (localStorage.getItem('prometheus-theme') && !localStorage.getItem('agon-theme')) {
+      localStorage.setItem('agon-theme', localStorage.getItem('prometheus-theme'));
+    }
+    localStorage.removeItem('prometheus-token');
+    localStorage.removeItem('prometheus-theme');
+  } catch(e) {}
+})();
+
 const API = '/api';
 
 // HTML escape helper for safely interpolating user data into innerHTML
@@ -833,10 +847,10 @@ function escapeHtml(s) {
 
 let sessions = []; // always an array
 let exCount = 0, setCounts = {};
-let tC = null, wC = null;
+let tC = null;
 
 function getToken() {
-  try { return localStorage.getItem('prometheus-token'); } catch(e) { return null; }
+  try { return localStorage.getItem('agon-token'); } catch(e) { return null; }
 }
 
 async function apiFetch(path, opts={}) {
@@ -861,7 +875,7 @@ function applyTheme(theme) {
   // Update theme-color meta so browser chrome matches
   const meta = document.getElementById('theme-color-meta');
   if (meta) meta.content = theme === 'dark' ? '#111110' : '#7A5C2E';
-  try { localStorage.setItem('prometheus-theme', theme); } catch(e) {}
+  try { localStorage.setItem('agon-theme', theme); } catch(e) {}
 }
 
 // Register service worker
@@ -881,7 +895,7 @@ function toggleTheme() {
 // Apply saved theme immediately
 (function() {
   try {
-    const saved = localStorage.getItem('prometheus-theme') || 'dark';
+    const saved = localStorage.getItem('agon-theme') || 'dark';
     applyTheme(saved);
   } catch(e) {
     applyTheme('dark');
@@ -890,7 +904,7 @@ function toggleTheme() {
 
 // Check for existing session on page load
 (async function bootstrap() {
-  const token = localStorage.getItem('prometheus-token');
+  const token = localStorage.getItem('agon-token');
   if (!token) { document.getElementById('login-screen').style.display='flex'; return; }
   try {
     const r = await fetch(API + '/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -902,7 +916,7 @@ function toggleTheme() {
     applyRoleUI();
     await init();
   } catch(e) {
-    localStorage.removeItem('prometheus-token');
+    localStorage.removeItem('agon-token');
     document.getElementById('login-screen').style.display = 'flex';
   }
 })();
@@ -922,7 +936,7 @@ function prefillBodyweight() {
 let currentUser = null;
 
 function logout() {
-  try { localStorage.removeItem('prometheus-token'); } catch(e) {}
+  try { localStorage.removeItem('agon-token'); } catch(e) {}
   currentUser = null;
   // Remove user badge and demo banner so they rebuild fresh on next login
   const badge = document.getElementById('user-badge');
@@ -948,7 +962,7 @@ async function doLogin() {
     const r = await fetch(API + '/auth/login', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
     if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
     const data = await r.json();
-    localStorage.setItem('prometheus-token', data.access_token);
+    localStorage.setItem('agon-token', data.access_token);
     currentUser = { username: data.username, role: data.role };
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
@@ -1045,7 +1059,7 @@ function applyRoleUI() {
 async function init() {
   // Reapply saved theme in case anything reset it during bootstrap
   try {
-    const saved = localStorage.getItem('prometheus-theme') || 'dark';
+    const saved = localStorage.getItem('agon-theme') || 'dark';
     applyTheme(saved);
   } catch(e) {}
   // Reset exercise container so multiple init() calls don't stack blocks
