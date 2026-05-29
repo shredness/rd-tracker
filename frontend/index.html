@@ -478,7 +478,7 @@
   <!-- USERS (admin only) -->
   <div id="tab-users" class="tab-panel">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
-      <div style="font-size:13px; color:var(--text2);">Manage user accounts. Guests have full access to their own data. Demo is read-only and sees your data.</div>
+      <div style="font-size:13px; color:var(--text2);">Manage user accounts. Guests have full access to their own data. Demo is read-only and displays sample data.</div>
       <button class="btn btn-sm btn-primary" onclick="openNewUserModal()">+ New user</button>
     </div>
     <div class="card" style="padding:0; overflow:hidden;">
@@ -506,7 +506,7 @@
       <label>Role</label>
       <select id="nu-role" style="width:100%;">
         <option value="guest">Guest - own data, full access</option>
-        <option value="demo">Demo - read-only, sees admin data</option>
+        <option value="demo">Demo - read-only, displays sample data</option>
         <option value="admin">Admin</option>
       </select>
     </div>
@@ -858,7 +858,7 @@ function applyRoleUI() {
         const banner = document.createElement('div');
         banner.id = 'demo-banner';
         banner.style.cssText = 'background:var(--accent-bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;font-size:12px;color:var(--accent-text);margin-bottom:16px;text-align:center;';
-        banner.textContent = 'You are viewing in read-only demo mode - data belongs to Manny.';
+        banner.textContent = 'You are viewing in read-only demo mode. Data shown is sample data.';
         const app = document.querySelector('.app');
         const tabs = document.querySelector('.tabs');
         if (app && tabs) app.insertBefore(banner, tabs.nextSibling);
@@ -2574,7 +2574,7 @@ async function openSettings() {
       if (removeBtn) removeBtn.style.display = 'none';
     }
     if (currentUser?.role === 'demo') {
-      status.textContent = 'Demo accounts cannot store a key. Ask in read-only mode only if the owner has one set.';
+      status.textContent = 'Demo accounts cannot store an API key.';
       document.getElementById('ai-key').disabled = true;
     } else {
       document.getElementById('ai-key').disabled = false;

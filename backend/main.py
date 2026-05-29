@@ -376,7 +376,7 @@ def create_user(body: UserCreate, user=Depends(admin_only)):
 
 @app.delete("/admin/users/{username}")
 def delete_user(username: str, user=Depends(admin_only)):
-    if username in (ADMIN_USER, DEMO_USER):
+    if username == ADMIN_USER:
         raise HTTPException(status_code=400, detail="Cannot delete system accounts")
     conn = get_db()
     conn.execute("DELETE FROM users WHERE username=?", (username,))
