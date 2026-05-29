@@ -3548,6 +3548,64 @@ async function deletePhase(id) {
   } catch(e) { showToast(e.message); }
 }
 
+
+// ── Onboarding ────────────────────────────────────────────────
+function obShow() {
+  document.getElementById('onboarding-modal').style.display = 'flex';
+  obNext(1);
+}
+
+function obNext(step) {
+  [1,2,3].forEach(n => {
+    const el = document.getElementById('ob-step-' + n);
+    if (el) el.style.display = n === step ? 'block' : 'none';
+  });
+}
+
+async function obSaveProfile() {
+  const msg = document.getElementById('ob-profile-msg');
+  msg.style.display = 'none';
+  const ft  = parseFloat(document.getElementById('ob-height-ft').value) || 0;
+  const inn = parseFloat(document.getElementById('ob-height-in').value) || 0;
+  const heightIn = (ft > 0 || inn > 0) ? (ft * 12 + inn) : null;
+  try {
+    await aiFetch('/profile', {
+      method: 'POST',
+      body: JSON.stringify({
+        first_name:     document.getElementById('ob-first').value.trim()     || null,
+        last_name:      document.getElementById('ob-last').value.trim()      || null,
+        dob:            document.getElementById('ob-dob').value              || null,
+        gender:         document.getElementById('ob-gender').value           || null,
+        week_start:     document.getElementById('ob-week-start').value       || 'Saturday',
+        height_in:      heightIn,
+        target_bw:      parseFloat(document.getElementById('ob-target-bw').value) || null,
+        activity_level: document.getElementById('ob-activity').value         || '1.55',
+      })
+    });
+    obNext(3);
+  } catch(e) {
+    msg.textContent = 'Could not save profile: ' + e.message;
+    msg.style.display = 'block';
+  }
+}
+
+async function obComplete() {
+  // Mark onboarded
+  try {
+    await aiFetch('/profile', { method:'POST', body: JSON.stringify({ onboarded: '1' }) });
+  } catch(e) { /* non-fatal */ }
+  document.getElementById('onboarding-modal').style.display = 'none';
+  // Sync profile fields into settings modal in case user opens it
+  await loadSettingsProfile();
+}
+
+async function obSkip() {
+  try {
+    await aiFetch('/profile', { method:'POST', body: JSON.stringify({ onboarded: '1' }) });
+  } catch(e) { /* non-fatal */ }
+  document.getElementById('onboarding-modal').style.display = 'none';
+}
+
 function openGuide() {
   document.getElementById('guide-modal').style.display = 'flex';
 }
@@ -3638,6 +3696,147 @@ function showToast(msg) {
         <li><strong>AI Insights</strong> - connect a Gemini or Claude API key. Keys are encrypted and stored on your server</li>
       </ul>
     </div>
+  </div>
+</div>
+
+<!-- Onboarding modal -->
+<div class="modal-overlay" id="onboarding-modal" style="display:none;">
+  <div class="modal" style="max-width:540px;max-height:90vh;overflow-y:auto;">
+
+    <!-- Step 1: Welcome -->
+    <div id="ob-step-1">
+      <div style="text-align:center;padding:16px 0 24px;">
+        <div style="font-size:36px;font-weight:800;color:var(--accent);letter-spacing:-1px;margin-bottom:6px;">Agon</div>
+        <div style="font-size:15px;color:var(--text2);font-style:italic;margin-bottom:24px;">strength through loss</div>
+        <div style="font-size:14px;color:var(--text);line-height:1.7;margin-bottom:12px;">
+          Agon tracks your <strong>Relative Density</strong> - a single number that tells you how much work you can do per minute relative to your bodyweight.
+        </div>
+        <div style="font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:28px;">
+          As you lose weight, RD tells you whether you are also losing strength - or outpacing it. It works just as well for bulk and cut cycles, recomps, and peak phases.
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:28px;">
+          Built for athletes who care about <em>relative</em> strength, not just numbers on a bar.
+        </div>
+        <button class="btn btn-primary" onclick="obNext(2)" style="width:200px;padding:12px;">Get started →</button>
+        <div style="margin-top:12px;">
+          <button onclick="obSkip()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;text-decoration:underline;">Skip onboarding</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Profile setup -->
+    <div id="ob-step-2" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <h3 style="margin:0;">Set up your profile</h3>
+        <span style="font-size:11px;color:var(--text3);">Step 2 of 3</span>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5;">Your profile powers the macro calculator and gives the AI context about your training. You can always update it later in Settings.</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div class="form-group">
+          <label>First name</label>
+          <input type="text" id="ob-first" style="width:100%;" placeholder="First name">
+        </div>
+        <div class="form-group">
+          <label>Last name</label>
+          <input type="text" id="ob-last" style="width:100%;" placeholder="Last name">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div class="form-group">
+          <label>Date of birth</label>
+          <input type="date" id="ob-dob" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Gender</label>
+          <select id="ob-gender" style="width:100%;">
+            <option value="">Prefer not to say</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div class="form-group">
+          <label>Height</label>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="number" id="ob-height-ft" min="4" max="7" style="width:60px;" placeholder="ft">
+            <span style="color:var(--text3);font-size:13px;">ft</span>
+            <input type="number" id="ob-height-in" min="0" max="11" style="width:60px;" placeholder="in">
+            <span style="color:var(--text3);font-size:13px;">in</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Target bodyweight (lbs)</label>
+          <input type="number" id="ob-target-bw" min="80" max="400" step="0.5" style="width:100%;" placeholder="e.g. 185">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <div class="form-group">
+          <label>Training week starts on</label>
+          <select id="ob-week-start" style="width:100%;">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday" selected>Saturday (default)</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Activity level</label>
+          <select id="ob-activity" style="width:100%;">
+            <option value="1.2">Sedentary</option>
+            <option value="1.375">Lightly active</option>
+            <option value="1.55" selected>Moderately active</option>
+            <option value="1.725">Very active</option>
+            <option value="1.9">Extremely active</option>
+          </select>
+        </div>
+      </div>
+      <div id="ob-profile-msg" style="font-size:12px;color:var(--red-text);margin-bottom:10px;display:none;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <button onclick="obSkip()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;text-decoration:underline;">Skip for now</button>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-sm" onclick="obNext(1)">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="obSaveProfile()">Save & continue →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: App tour -->
+    <div id="ob-step-3" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="margin:0;">How Agon works</h3>
+        <span style="font-size:11px;color:var(--text3);">Step 3 of 3</span>
+      </div>
+      <div class="guide-section">
+        <div class="guide-tab-label"><i class="ti ti-barbell"></i> Workout</div>
+        <p>Log every session here. Each set gets a load, reps, and time. RD is calculated automatically. The 👑 crown in History flags when an exercise hits its rep trigger - time to add weight.</p>
+      </div>
+      <div class="guide-section">
+        <div class="guide-tab-label"><i class="ti ti-trending-up"></i> Trend + Phases</div>
+        <p>Weekly RD and bodyweight on one chart, with colored phase bands. Add training phases (Weight Loss, Recomp, Bulk, etc) to annotate your history. The macro calculator uses your phase and profile to give you daily calorie and macro targets.</p>
+      </div>
+      <div class="guide-section">
+        <div class="guide-tab-label"><i class="ti ti-sparkles"></i> Insights</div>
+        <p>Ask plain-English questions about your training data. Powered by Gemini or Claude - add an API key in Settings (click your username). Questions like "Am I losing strength on my pulls?" get answers grounded in your actual sessions.</p>
+      </div>
+      <div class="guide-section">
+        <div class="guide-tab-label"><i class="ti ti-file-download"></i> Data</div>
+        <p>Import historical sessions from Excel using the provided template. Export everything at any time. The template includes a Legend sheet explaining every field.</p>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:12px 14px;margin:16px 0;font-size:12px;color:var(--text2);line-height:1.6;">
+        <strong style="color:var(--text);">Tip:</strong> Click your username in the top-right at any time to edit your profile, manage protocols, or connect an AI key. Click <strong>?</strong> to reopen this guide.
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <button class="btn btn-sm" onclick="obNext(2)">← Back</button>
+        <button class="btn btn-primary" onclick="obComplete()" style="padding:10px 28px;">Start using Agon →</button>
+      </div>
+    </div>
+
   </div>
 </div>
 </body>

@@ -174,7 +174,8 @@ def init_db():
     for col, default in [('first_name','NULL'),('last_name','NULL'),('dob','NULL'),
                          ('gender','NULL'),('week_start',"'Saturday'"),
                          ('height_in','NULL'),('target_bw','NULL'),
-                         ('activity_level',"'1.55'")]:
+                         ('activity_level',"'1.55'"),
+                         ('onboarded',"'0'")]:
         try:
             conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} TEXT DEFAULT {default}")
             conn.commit()
@@ -362,6 +363,7 @@ class ProfileIn(BaseModel):
     height_in:      Optional[float] = None      # inches
     target_bw:      Optional[float] = None      # lbs
     activity_level: Optional[str]   = None      # TDEE multiplier string
+    onboarded:      Optional[str]   = None      # "1" once user completes onboarding
 
 class ProtocolIn(BaseModel):
     name:      str
@@ -679,7 +681,7 @@ def get_profile(user=Depends(current_user)):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level FROM user_settings WHERE user_id=?",
+            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level, onboarded FROM user_settings WHERE user_id=?",
             (user["id"],)
         ).fetchone()
     except Exception:
@@ -703,6 +705,7 @@ def get_profile(user=Depends(current_user)):
         "height_in":        row["height_in"]        if "height_in"        in row.keys() else None,
         "target_bw":        row["target_bw"]        if "target_bw"        in row.keys() else None,
         "activity_level":   row["activity_level"]   if "activity_level"   in row.keys() else "1.55",
+        "onboarded":        row["onboarded"]        if "onboarded"        in row.keys() else "0",
     }
 
 @app.post("/profile")
@@ -722,10 +725,11 @@ def save_profile(body: ProfileIn, user=Depends(current_user)):
                 height_in=COALESCE(?,height_in),
                 target_bw=COALESCE(?,target_bw),
                 activity_level=COALESCE(?,activity_level),
+                onboarded=COALESCE(?,onboarded),
                 updated_at=datetime('now')
             WHERE user_id=?
         """, (body.first_name, body.last_name, body.dob, body.gender, body.week_start,
-                body.height_in, body.target_bw, body.activity_level, user["id"]))
+                body.height_in, body.target_bw, body.activity_level, body.onboarded, user["id"]))
     else:
         conn.execute("""
             INSERT INTO user_settings (user_id, first_name, last_name, dob, gender, week_start, height_in, target_bw)
