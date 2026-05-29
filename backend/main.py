@@ -1349,9 +1349,12 @@ def get_phases(user=Depends(current_user)):
 def create_phase(body: PhaseIn, user=Depends(current_user)):
     if user["role"] == "demo":
         raise HTTPException(status_code=403, detail="Demo accounts cannot create phases")
-    # Close any open phase first
+    from datetime import date as _date
+    today_str = _date.today().strftime("%Y-%m-%d")
     conn = get_db()
-    if not body.end_date:
+    # Only auto-close the open phase if new phase starts today or in future
+    # For historical phases (past start date) the user sets end dates manually
+    if not body.end_date and body.start_date >= today_str:
         conn.execute(
             "UPDATE phases SET end_date=? WHERE user_id=? AND end_date IS NULL",
             (body.start_date, user["id"])

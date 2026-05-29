@@ -369,10 +369,11 @@
       <div class="form-group" style="margin-bottom:10px;">
         <label>Phase type</label>
         <select id="phase-type" style="width:100%;">
+          <option value="Weight Loss">Weight Loss</option>
           <option value="Cut">Cut</option>
+          <option value="Recomp">Recomp</option>
           <option value="Bulk">Bulk</option>
           <option value="Maintain">Maintain</option>
-          <option value="Recomp">Recomp</option>
           <option value="Peak">Peak</option>
           <option value="Deload">Deload</option>
         </select>
@@ -668,9 +669,24 @@
       </select>
     </div>
     <div id="settings-profile-msg" style="display:none;font-size:12px;margin-bottom:8px;"></div>
-    <button class="btn btn-sm" onclick="saveSettingsProfile()" style="margin-bottom:18px;">Save profile</button>
+    <button class="btn btn-sm" onclick="saveSettingsProfile()" style="margin-bottom:14px;">Save profile</button>
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
 
-    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:18px;">
+    <!-- Protocols -->
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Protocols</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">Supplements, peptides, and medications relevant to your training. Used as context by AI Insights only - Agon does not provide medical advice.</div>
+    <div id="protocols-list" style="margin-bottom:12px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <input type="text" id="proto-name" placeholder="Name (e.g. Retatrutide)" style="font-size:12px;">
+      <input type="text" id="proto-dose" placeholder="Dose (e.g. 5mg)" style="font-size:12px;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <input type="text" id="proto-freq" placeholder="Frequency (e.g. Weekly)" style="font-size:12px;">
+      <input type="text" id="proto-notes" placeholder="Notes (e.g. GLP)" style="font-size:12px;">
+    </div>
+    <button class="btn btn-sm" onclick="addProtocol()">+ Add protocol</button>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
 
     <!-- ── Account ── -->
     <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Account</div>
@@ -3077,15 +3093,19 @@ let _macroRecomp   = null;
 let _macroPhase    = null;
 
 async function loadMacroData() {
+  const out = document.getElementById('macro-output');
+  if (out) out.innerHTML = '<span style="color:var(--text3);">Loading...</span>';
   try {
     [_macroProfile, _macroRecomp] = await Promise.all([
       aiFetch('/profile'),
       aiFetch('/recomp')
     ]);
-    // Get active phase
     const phases = await aiFetch('/phases');
     _macroPhase = phases.find(p => !p.end_date) || null;
-  } catch(e) { /* non-fatal */ }
+  } catch(e) {
+    if (out) out.innerHTML = '<span style="color:var(--red-text);">Could not load profile data: ' + escapeHtml(e.message) + '</span>';
+    return;
+  }
   calcMacros();
 }
 
@@ -3097,7 +3117,11 @@ function calcMacros() {
   const r = _macroRecomp;
 
   if (!p || !p.height_in || !p.dob || !p.gender) {
-    out.innerHTML = '<span style="color:var(--text3);">Set your height, date of birth, and gender in Settings to calculate macros.</span>';
+    const missing = [];
+    if (!p || !p.height_in) missing.push('height');
+    if (!p || !p.dob)       missing.push('date of birth');
+    if (!p || !p.gender)    missing.push('gender');
+    out.innerHTML = `<span style="color:var(--text3);">Open Settings and fill in: <strong>${missing.join(', ')}</strong> to calculate macros.</span>`;
     return;
   }
 
@@ -3135,7 +3159,12 @@ function calcMacros() {
   const phase = _macroPhase?.phase_type || 'Maintain';
   let calTarget, proteinG, phaseAdj, proteinNote;
 
-  if (phase === 'Bulk') {
+  if (phase === 'Weight Loss') {
+    calTarget   = tdee - 600;
+    proteinG    = Math.round(1.0 * (targetBW || currentBW));
+    phaseAdj    = '-600 kcal deficit';
+    proteinNote = '1.0g per lb of target BW (aggressive cut)';
+  } else if (phase === 'Bulk') {
     calTarget   = tdee + 300;
     proteinG    = Math.round(1.2 * currentBW);
     phaseAdj    = '+300 kcal surplus';
@@ -3277,8 +3306,8 @@ async function loadRecompScore() {
 
 // ── Phase management ──────────────────────────────────────────
 const PHASE_COLORS = {
-  'Cut':'#E05A20', 'Bulk':'#3B82F6', 'Maintain':'#888780',
-  'Recomp':'#10B981', 'Peak':'#F59E0B', 'Deload':'#8B5CF6'
+  'Weight Loss':'#EF4444', 'Cut':'#E05A20', 'Recomp':'#10B981',
+  'Bulk':'#3B82F6', 'Maintain':'#888780', 'Peak':'#F59E0B', 'Deload':'#8B5CF6'
 };
 
 async function loadPhases() {
