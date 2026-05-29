@@ -1066,6 +1066,17 @@ async function init() {
   addExercise();
   if (currentUser) updateExportSummary();
   prefillBodyweight();
+  // Show onboarding for new users (not demo)
+  if (currentUser && currentUser.role !== 'demo') {
+    try {
+      const prof = await aiFetch('/profile');
+      const isOnboarded = prof && prof.onboarded && prof.onboarded !== '0' && prof.onboarded !== 0;
+      if (!isOnboarded) obShow();
+    } catch(e) {
+      // Profile fetch failed — show onboarding anyway for new users
+      obShow();
+    }
+  }
 }
 
 function switchTab(name) {
