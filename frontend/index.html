@@ -538,6 +538,50 @@
   <div class="modal" style="max-width:480px;">
     <h3>Settings</h3>
 
+    <!-- ── Profile ── -->
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Profile</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group">
+        <label>First name</label>
+        <input type="text" id="s-first" style="width:100%;" placeholder="First name">
+      </div>
+      <div class="form-group">
+        <label>Last name</label>
+        <input type="text" id="s-last" style="width:100%;" placeholder="Last name">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group">
+        <label>Date of birth</label>
+        <input type="date" id="s-dob" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>Gender</label>
+        <select id="s-gender" style="width:100%;">
+          <option value="">Prefer not to say</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:4px;">
+      <label>Training week starts on</label>
+      <select id="s-week-start" style="width:100%;">
+        <option value="Monday">Monday</option>
+        <option value="Tuesday">Tuesday</option>
+        <option value="Wednesday">Wednesday</option>
+        <option value="Thursday">Thursday</option>
+        <option value="Friday">Friday</option>
+        <option value="Saturday">Saturday (default)</option>
+        <option value="Sunday">Sunday</option>
+      </select>
+    </div>
+    <div id="settings-profile-msg" style="display:none;font-size:12px;margin-bottom:8px;"></div>
+    <button class="btn btn-sm" onclick="saveSettingsProfile()" style="margin-bottom:18px;">Save profile</button>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:18px;">
+
     <!-- ── Account ── -->
     <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Account</div>
     <div class="form-group" style="margin-bottom:10px;">
@@ -2512,6 +2556,7 @@ async function openSettings() {
   document.getElementById('settings-modal').style.display = 'flex';
   document.getElementById('settings-msg').style.display = 'none';
   document.getElementById('ai-key').value = '';
+  loadSettingsProfile();
   try {
     const s = await aiFetch('/ai/settings');
     _aiHasKey = s.has_key;
@@ -2691,6 +2736,50 @@ async function clearInsights() {
   }
 }
 
+
+
+// ── Profile ───────────────────────────────────────────────────
+async function loadSettingsProfile() {
+  try {
+    const p = await aiFetch('/profile');
+    document.getElementById('s-first').value       = p.first_name  || '';
+    document.getElementById('s-last').value        = p.last_name   || '';
+    document.getElementById('s-dob').value         = p.dob         || '';
+    document.getElementById('s-gender').value      = p.gender      || '';
+    document.getElementById('s-week-start').value  = p.week_start  || 'Saturday';
+  } catch(e) { /* non-fatal */ }
+}
+
+async function saveSettingsProfile() {
+  const msg = document.getElementById('settings-profile-msg');
+  const show = (text, err) => {
+    msg.textContent = text;
+    msg.style.color = err ? 'var(--red-text)' : '#10B981';
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 3000);
+  };
+  try {
+    await aiFetch('/profile', {
+      method: 'POST',
+      body: JSON.stringify({
+        first_name: document.getElementById('s-first').value.trim() || null,
+        last_name:  document.getElementById('s-last').value.trim()  || null,
+        dob:        document.getElementById('s-dob').value          || null,
+        gender:     document.getElementById('s-gender').value       || null,
+        week_start: document.getElementById('s-week-start').value   || 'Saturday',
+      })
+    });
+    show('Profile saved.', false);
+    // Refresh trend data since week_start may have changed
+    if (typeof trendData !== 'undefined') {
+      const fetched = await apiFetch('/trend');
+      trendData = Array.isArray(fetched) ? fetched : [];
+      renderTrend();
+    }
+  } catch(e) {
+    show(e.message, true);
+  }
+}
 
 // ── Settings: password change ─────────────────────────────────
 async function saveSettingsPw() {

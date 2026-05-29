@@ -153,16 +153,28 @@ def init_db():
         )
     """)
 
-    # Per-user AI settings: encrypted Gemini key + model choice
+    # Per-user AI settings, profile info, and preferences
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id      INTEGER PRIMARY KEY,
             ai_key_enc   TEXT,
             ai_model     TEXT DEFAULT 'gemini-2.5-flash',
+            first_name   TEXT,
+            last_name    TEXT,
+            dob          TEXT,
+            gender       TEXT,
+            week_start   TEXT DEFAULT 'Saturday',
             updated_at   TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    # Migrate existing rows to add new profile columns if they don't exist
+    for col, default in [('first_name','NULL'),('last_name','NULL'),('dob','NULL'),
+                         ('gender','NULL'),('week_start',"'Saturday'")]:
+        try:
+            conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} TEXT DEFAULT {default}")
+        except Exception:
+            pass
 
     # Persisted Insights conversation history (one row per message)
     conn.execute("""
@@ -305,6 +317,13 @@ class UserCreate(BaseModel):
     password: str
     role: str = "guest"
 
+
+class ProfileIn(BaseModel):
+    first_name: Optional[str] = None
+    last_name:  Optional[str] = None
+    dob:        Optional[str] = None   # YYYY-MM-DD
+    gender:     Optional[str] = None
+    week_start: Optional[str] = None   # Monday-Sunday
 
 class AISettingsIn(BaseModel):
     ai_key: Optional[str] = None      # plaintext key from user; None = don't change
@@ -455,10 +474,17 @@ def get_trend(user=Depends(current_user)):
     ).fetchall()
     conn.close()
 
-    # Group by week-ending Thursday (Sat-Thu workout week, matching original spreadsheet)
+    # Determine week_start preference (defaults to Saturday)
+    conn2 = get_db()
+    settings_row = conn2.execute("SELECT week_start FROM user_settings WHERE user_id=?", (uid,)).fetchone()
+    conn2.close()
+    week_start_pref = (settings_row["week_start"] if settings_row and settings_row["week_start"] else "Saturday")
+
     # weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
-    # Days to next Thursday: Thu=0, Fri=6, Sat=5, Sun=4, Mon=3, Tue=2, Wed=1
-    days_to_thursday = {0:3, 1:2, 2:1, 3:0, 4:6, 5:5, 6:4}
+    # Week ends on the day BEFORE week_start
+    DAY_MAP = {"Monday":0,"Tuesday":1,"Wednesday":2,"Thursday":3,"Friday":4,"Saturday":5,"Sunday":6}
+    start_wd = DAY_MAP.get(week_start_pref, 5)  # default Saturday=5
+    end_wd = (start_wd - 1) % 7  # week-end day
 
     by_week: dict = {}
     for r in rows:
@@ -466,9 +492,9 @@ def get_trend(user=Depends(current_user)):
             d = datetime.strptime(r["date"], "%Y-%m-%d")
         except ValueError:
             continue
-        delta = days_to_thursday[d.weekday()]
-        thu = d + timedelta(days=delta)
-        key = f"{thu.month}/{thu.day}/{thu.year}"
+        delta = (end_wd - d.weekday()) % 7
+        week_end = d + timedelta(days=delta)
+        key = f"{week_end.month}/{week_end.day}/{week_end.year}"
         if key not in by_week:
             by_week[key] = []
         by_week[key].append({"rd": r["rd"], "wt": r["bw"]})
@@ -594,6 +620,53 @@ def get_logged_exercises(user=Depends(current_user)):
                 names.add(ex["name"])
     return sorted(names)
 
+# ── Profile endpoints ────────────────────────────────────────
+@app.get("/profile")
+def get_profile(user=Depends(current_user)):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
+        (user["id"],)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"first_name":"","last_name":"","dob":"","gender":"","week_start":"Saturday"}
+    return {
+        "first_name": row["first_name"] or "",
+        "last_name":  row["last_name"]  or "",
+        "dob":        row["dob"]        or "",
+        "gender":     row["gender"]     or "",
+        "week_start": row["week_start"] or "Saturday",
+    }
+
+@app.post("/profile")
+def save_profile(body: ProfileIn, user=Depends(current_user)):
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo accounts cannot save profile data")
+    conn = get_db()
+    existing = conn.execute("SELECT user_id FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+    if existing:
+        conn.execute("""
+            UPDATE user_settings SET
+                first_name=COALESCE(?,first_name),
+                last_name=COALESCE(?,last_name),
+                dob=COALESCE(?,dob),
+                gender=COALESCE(?,gender),
+                week_start=COALESCE(?,week_start),
+                updated_at=datetime('now')
+            WHERE user_id=?
+        """, (body.first_name, body.last_name, body.dob, body.gender, body.week_start, user["id"]))
+    else:
+        conn.execute("""
+            INSERT INTO user_settings (user_id, first_name, last_name, dob, gender, week_start)
+            VALUES (?,?,?,?,?,?)
+        """, (user["id"], body.first_name, body.last_name, body.dob, body.gender,
+                body.week_start or "Saturday"))
+    conn.commit()
+    conn.close()
+    return {"status": "saved"}
+
+
 # ── AI Settings endpoints ─────────────────────────────────────
 @app.get("/ai/settings")
 def get_ai_settings(user=Depends(current_user)):
@@ -659,6 +732,28 @@ def build_training_context(uid: int) -> str:
         return "No training sessions logged yet."
 
     lines = []
+    # Load profile for richer AI context
+    conn_p = get_db()
+    prof = conn_p.execute(
+        "SELECT first_name, last_name, dob, gender, week_start FROM user_settings WHERE user_id=?",
+        (uid,)
+    ).fetchone()
+    conn_p.close()
+
+    if prof:
+        name_str = " ".join(filter(None, [prof["first_name"], prof["last_name"]])) or "User"
+        age_str = ""
+        if prof["dob"]:
+            try:
+                from datetime import date as _date
+                dob = datetime.strptime(prof["dob"], "%Y-%m-%d").date()
+                age_str = f", age {(_date.today().year - dob.year - ((_date.today().month, _date.today().day) < (dob.month, dob.day)))}"
+            except Exception:
+                pass
+        lines.append(f"Athlete: {name_str}{age_str}, gender: {prof['gender'] or 'not specified'}")
+        lines.append(f"Training week: {prof['week_start'] or 'Saturday'} through {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][((['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].index(prof['week_start'] or 'Saturday') + 6) % 7)]}")
+        lines.append("")
+
     lines.append(f"Total sessions: {len(rows)}")
     lines.append(f"Date range: {rows[0]['date']} to {rows[-1]['date']}")
     lines.append("")
