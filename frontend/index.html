@@ -895,7 +895,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.1.2';
+const APP_VERSION = '0.1.3';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -2206,7 +2206,7 @@ function renderBankTable() {
   const isAdmin = currentUser?.role === 'admin';
   const userId  = currentUser?.id;
 
-  const canEdit = (e) => isAdmin || !e.createdBy || e.createdBy === userId;
+  const canEdit = (e) => isAdmin || (e.createdBy != null && e.createdBy === userId);
 
   const inp = (val, idx, field, extra='', disabled=false) =>
     `<input type="text" value="${String(val).replace(/"/g,'&quot;')}" data-field="${field}"
