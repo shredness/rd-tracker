@@ -333,7 +333,7 @@
           <span style="display:inline-block;width:24px;height:3px;background:var(--chart-rd);border-radius:2px;"></span> Relative Density (left)
         </span>
         <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
-          <span style="display:inline-block;width:24px;height:2px;border-top:2px dashed #888780;"></span> Avg RD
+          <span style="display:inline-block;width:24px;height:2px;border-top:2px dashed #888780;"></span> Monthly avg RD
         </span>
         <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
           <span style="display:inline-block;width:24px;height:3px;background:var(--chart-wt);border-radius:2px;"></span> Bodyweight lbs (right)
@@ -1783,7 +1783,23 @@ async function renderTrend() {
     type:'line',
     data:{labels,datasets:[
       {label:'RD',data:rdV,borderColor:getComputedStyle(document.documentElement).getPropertyValue('--chart-rd').trim()||'#7A5C2E',backgroundColor:'rgba(122,92,46,0.08)',tension:.35,fill:true,pointRadius:3,borderWidth:2,yAxisID:'yRD'},
-      {label:'Avg RD',data:rdV.map(()=>+avg.toFixed(2)),borderColor:getComputedStyle(document.documentElement).getPropertyValue('--text3').trim()||'#9C8E7A',borderDash:[4,4],borderWidth:1.5,pointRadius:0,fill:false,yAxisID:'yRD'},
+      {label:'Monthly avg RD',data:(()=>{
+        // Build month->avgRD map from trendData
+        const monthMap = {};
+        trendData.forEach((td, i) => {
+          const parts = td.week.split('/');
+          const monthKey = parts[2] + '-' + parts[0].padStart(2,'0'); // YYYY-MM
+          if (!monthMap[monthKey]) monthMap[monthKey] = [];
+          monthMap[monthKey].push(td.rd);
+        });
+        const monthAvg = {};
+        Object.entries(monthMap).forEach(([k,v]) => monthAvg[k] = v.reduce((a,b)=>a+b,0)/v.length);
+        return trendData.map(td => {
+          const parts = td.week.split('/');
+          const monthKey = parts[2] + '-' + parts[0].padStart(2,'0');
+          return +(monthAvg[monthKey]||0).toFixed(2);
+        });
+      })(),borderColor:getComputedStyle(document.documentElement).getPropertyValue('--text3').trim()||'#9C8E7A',borderDash:[4,4],borderWidth:1.5,pointRadius:0,fill:false,yAxisID:'yRD'},
       {label:'Bodyweight',data:wtV,borderColor:getComputedStyle(document.documentElement).getPropertyValue('--chart-wt').trim()||'#4A7A2E',backgroundColor:'rgba(74,122,46,0.0)',tension:.35,fill:false,pointRadius:3,borderWidth:2,yAxisID:'yWT',borderDash:[]}
     ]},
     options:{
