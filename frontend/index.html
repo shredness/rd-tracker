@@ -605,7 +605,6 @@
       </div>
     </div>
   </div>
-  </div>
 
   <!-- USERS (admin only) -->
   <div id="tab-users" class="tab-panel">
@@ -941,7 +940,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.2.3';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -1232,7 +1231,7 @@ function switchTab(name) {
   if (name==='bank') renderBankTable();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
-  if (name==='export') updateExportSummary();
+  if (name==='export') { buildLogRows(); populateExportPhaseDropdown(); updateExportScopeCount(); updateExportSummary(); }
   if (name==='trend') { loadRecompScore(); loadPhases(); loadMacroData(); }
   if (name==='insights') openInsights();
   if (name==='users') { loadUsers(); loadActivityLog(); }
@@ -2300,18 +2299,18 @@ function renderBankTable() {
 
 function buildLogRows() {
   // Build date->phase map
-  const phaseMap = {};
+  exportPhaseMap = {};
   if (typeof _allPhases !== 'undefined' && _allPhases && _allPhases.length) {
     for (const ph of _allPhases) {
       const end = ph.end_date || '9999-12-31';
       for (const s of sessions) {
-        if (s.date >= ph.start_date && s.date <= end) phaseMap[s.date] = ph.phase_type;
+        if (s.date >= ph.start_date && s.date <= end) exportPhaseMap[s.date] = ph.phase_type;
       }
     }
   }
   const rows=[];
   sessions.forEach(s=>{
-    const phase = phaseMap[s.date] || '';
+    const phase = exportPhaseMap[s.date] || '';
     (s.exercises||[]).forEach(ex=>{
       (ex.sets||[]).forEach(set=>{
         rows.push({'Date':s.date,'Weight (lbs)':s.bw,'Exercise':ex.name,'Load (lbs)':+set.rawLoad.toFixed(1),'Reps':set.reps,'True (lbs)':+set.trueLbs.toFixed(1),'Vol (lbs)':+set.vol.toFixed(1),'Time (min)':set.time||ex.time||1.5,'Density':+((set.vol/(set.time||ex.time||1.5))).toFixed(2),'Rel Density':+s.rd.toFixed(2),'Notes':set.notes||'','Phase':phase});
@@ -3412,6 +3411,7 @@ let _macroRecomp   = null;
 let _macroPhase    = null;
 let _allPhases     = [];
 let _pendingMealPrompt = "";
+let exportPhaseMap = {};
 
 async function loadMacroData() {
   const out = document.getElementById('macro-output');
