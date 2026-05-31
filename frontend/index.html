@@ -454,6 +454,45 @@
 
   <!-- PROGRESS -->
   <div id="tab-progress" class="tab-panel">
+    <!-- Anatomy Heatmap -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Strength Progress by Muscle</div>
+          <div style="font-size:13px;color:var(--text2);">% change in max load per muscle group</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="font-size:12px;color:var(--text2);">Period</label>
+          <select id="anatomy-period" style="font-size:12px;padding:5px 8px;" onchange="renderAnatomyHeatmap()">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="365">Last year</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
+        <div id="anatomy-svg-container" style="flex:1;min-width:200px;"></div>
+        <div style="flex:0 0 140px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;">Color scale</div>
+          <div style="font-size:11px;line-height:1.8;color:var(--text2);">
+            <div style="margin-bottom:8px;">
+              <div style="display:inline-block;width:16px;height:16px;background:#4ade80;border-radius:2px;margin-right:6px;vertical-align:middle;"></div>Gain
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="display:inline-block;width:16px;height:16px;background:#60a5fa;border-radius:2px;margin-right:6px;vertical-align:middle;"></div>No change
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="display:inline-block;width:16px;height:16px;background:#ef4444;border-radius:2px;margin-right:6px;vertical-align:middle;"></div>Loss
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:12px;font-style:italic;">Hover for details</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exercise selector and sub-panels -->
     <div class="card" style="padding:16px 20px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <div class="form-group" style="flex:1;min-width:200px;">
@@ -940,7 +979,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.2.6';
+const APP_VERSION = '0.3.0';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -1230,7 +1269,7 @@ function switchTab(name) {
   }
   if (name==='bank') renderBankTable();
   if (name==='trend') renderTrend();
-  if (name==='progress') initProgress();
+  if (name==='progress') { renderAnatomyHeatmap(); initProgress(); }
   if (name==='export') {
     const doExportTab = () => { buildLogRows(); populateExportPhaseDropdown(); updateExportScopeCount(); updateExportSummary(); };
     if (!_allPhases || !_allPhases.length) {
@@ -2003,10 +2042,15 @@ async function confirmMusclePicker() {
   if (_musclePickerIdx === null) return;
   const selected = [...document.querySelectorAll('#muscle-chip-container .muscle-chip.selected')]
     .map(el => el.textContent.trim());
+  
+  if (selected.length === 0) {
+    showToast('At least one muscle group is required');
+    return;
+  }
+
   const ex = EXERCISE_BANK[_musclePickerIdx];
   ex.muscles = selected;
   ex.muscle = selected.join(' / ');
-  // If bank not yet in DB, just update local and re-render
 
   await saveBankRowToAPI(ex);
   closeMusclePicker();
@@ -4064,6 +4108,146 @@ function populateExportPhaseDropdown() {
     phases.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
 }
 
+
+// ── Anatomy Heatmap ───────────────────────────────────────────
+const ANATOMY_MUSCLES = [
+  'Chest', 'Back', 'Biceps', 'Triceps', 'Forearms',
+  'Shoulders', 'Abs', 'Obliques', 'Glutes', 'Quads',
+  'Hamstrings', 'Calves', 'Traps', 'Lats'
+];
+
+function getStrengthDelta(muscleGroup, days) {
+  // Filter sessions to the period
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const periodSessions = sessions.filter(s => s.date >= cutoffStr);
+  
+  if (!periodSessions.length) return { start: 0, end: 0, pct: 0 };
+
+  // Find all exercises with this muscle group
+  const muscleExercises = [];
+  EXERCISE_BANK.forEach(ex => { // use anatomical muscles for heatmap
+    if (ex.muscles && ex.muscles.includes(muscleGroup)) {
+      muscleExercises.push(ex.name);
+    }
+  });
+
+  if (!muscleExercises.length) return { start: 0, end: 0, pct: 0 };
+
+  // Get max loads from start and end of period
+  let startLoad = 0, endLoad = 0;
+  periodSessions.forEach(s => {
+    if (!s.exercises) return;
+    s.exercises.forEach(ex => {
+      if (muscleExercises.includes(ex.name) && ex.sets && ex.sets.length) {
+        const maxSet = Math.max(...ex.sets.map(st => st.rawLoad || 0));
+        if (s.date <= cutoffStr.slice(0, 7) + '-14') startLoad = Math.max(startLoad, maxSet);
+        if (s.date >= new Date(cutoff.getTime() + 15*24*60*60*1000).toISOString().slice(0, 10)) endLoad = Math.max(endLoad, maxSet);
+      }
+    });
+  });
+
+  // Fallback: use first vs last session in period
+  if (!startLoad || !endLoad) {
+    let firstLoad = 0, lastLoad = 0;
+    periodSessions.forEach(s => {
+      if (!s.exercises) return;
+      s.exercises.forEach(ex => {
+        if (muscleExercises.includes(ex.name) && ex.sets && ex.sets.length) {
+          const maxSet = Math.max(...ex.sets.map(st => st.rawLoad || 0));
+          if (!firstLoad || s.date < periodSessions[0].date) firstLoad = maxSet;
+          lastLoad = Math.max(lastLoad, maxSet);
+        }
+      });
+    });
+    startLoad = firstLoad;
+    endLoad = lastLoad;
+  }
+
+  const pct = startLoad > 0 ? ((endLoad - startLoad) / startLoad) * 100 : 0;
+  return { start: startLoad, end: endLoad, pct: Math.round(pct) };
+}
+
+function getMuscleColor(pct) {
+  const clamped = Math.max(-100, Math.min(100, pct));
+  if (clamped >= 3) {
+    // Green: +3 to +100
+    const intensity = clamped / 100;
+    const g = Math.round(74 + (255-74) * intensity);
+    const r = Math.round(74 - 74 * intensity);
+    return `rgb(${r}, ${g}, 64)`;
+  } else if (clamped <= -3) {
+    // Red: -3 to -100
+    const intensity = Math.abs(clamped) / 100;
+    const r = Math.round(239 + (255-239) * intensity);
+    const g = Math.round(68 - 68 * intensity);
+    return `rgb(${r}, ${g}, 68)`;
+  } else {
+    // Blue: -3 to +3
+    return '#60a5fa';
+  }
+}
+
+function renderAnatomyHeatmap() {
+  const days = parseInt(document.getElementById('anatomy-period')?.value || 30);
+  const container = document.getElementById('anatomy-svg-container');
+  if (!container) return;
+
+  // Simple SVG anatomy figure with labeled muscle regions
+  const svg = `<svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:300px;">
+    <g id="anatomy-body">
+      <!-- Head -->
+      <circle cx="100" cy="30" r="15" fill="var(--text3)" opacity="0.3"/>
+      <!-- Chest -->
+      <rect x="75" y="50" width="50" height="40" rx="8" id="chest-region" cursor="pointer" onmouseover="showMuscleInfo('Chest')" onmouseout="hideMuscleInfo()"/>
+      <!-- Back (implied, not visible in front view) -->
+      <!-- Abs -->
+      <rect x="85" y="95" width="30" height="35" rx="6" id="abs-region" cursor="pointer" onmouseover="showMuscleInfo('Abs')" onmouseout="hideMuscleInfo()"/>
+      <!-- Shoulders -->
+      <circle cx="60" cy="55" r="12" id="shoulders-region" cursor="pointer" onmouseover="showMuscleInfo('Shoulders')" onmouseout="hideMuscleInfo()"/>
+      <circle cx="140" cy="55" r="12" id="shoulders-region-r" cursor="pointer" onmouseover="showMuscleInfo('Shoulders')" onmouseout="hideMuscleInfo()"/>
+      <!-- Biceps/Triceps -->
+      <rect x="45" y="70" width="15" height="50" rx="4" id="biceps-region" cursor="pointer" onmouseover="showMuscleInfo('Biceps')" onmouseout="hideMuscleInfo()"/>
+      <rect x="140" y="70" width="15" height="50" rx="4" id="triceps-region" cursor="pointer" onmouseover="showMuscleInfo('Triceps')" onmouseout="hideMuscleInfo()"/>
+      <!-- Forearms -->
+      <rect x="40" y="125" width="12" height="35" rx="3" id="forearms-region" cursor="pointer" onmouseover="showMuscleInfo('Forearms')" onmouseout="hideMuscleInfo()"/>
+      <rect x="148" y="125" width="12" height="35" rx="3" id="forearms-region-r" cursor="pointer" onmouseover="showMuscleInfo('Forearms')" onmouseout="hideMuscleInfo()"/>
+      <!-- Quads -->
+      <rect x="75" y="150" width="50" height="60" rx="8" id="quads-region" cursor="pointer" onmouseover="showMuscleInfo('Quads')" onmouseout="hideMuscleInfo()"/>
+      <!-- Hamstrings (back, not visible) -->
+      <!-- Glutes -->
+      <ellipse cx="100" cy="140" rx="28" ry="20" id="glutes-region" cursor="pointer" onmouseover="showMuscleInfo('Glutes')" onmouseout="hideMuscleInfo()" opacity="0.6"/>
+      <!-- Calves -->
+      <rect x="80" y="220" width="40" height="50" rx="6" id="calves-region" cursor="pointer" onmouseover="showMuscleInfo('Calves')" onmouseout="hideMuscleInfo()"/>
+    </g>
+  </svg>`;
+
+  container.innerHTML = svg;
+
+  // Color the regions
+  const muscleMap = {
+    'Chest': 'chest-region',
+    'Shoulders': ['shoulders-region', 'shoulders-region-r'],
+    'Biceps': 'biceps-region',
+    'Triceps': 'triceps-region',
+    'Forearms': ['forearms-region', 'forearms-region-r'],
+    'Quads': 'quads-region',
+    'Glutes': 'glutes-region',
+    'Calves': 'calves-region',
+    'Abs': 'abs-region',
+  };
+
+  Object.entries(muscleMap).forEach(([muscle, ids]) => {
+    const delta = getStrengthDelta(muscle, days);
+    const color = getMuscleColor(delta.pct);
+    const idList = Array.isArray(ids) ? ids : [ids];
+    idList.forEach(id => {
+      const el = container.querySelector('#' + id);
+      if (el) el.setAttribute('fill', color);
+    });
+  });
+}
 function showToast(msg) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');

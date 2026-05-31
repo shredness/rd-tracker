@@ -651,6 +651,8 @@ def get_exercise_bank(user=Depends(current_user)):
 def add_exercise(body: ExerciseIn, user=Depends(current_user)):
     if user["role"] not in ("admin", "guest"):
         raise HTTPException(status_code=403, detail="Read-only account")
+    if not body.muscles or len(body.muscles) == 0:
+        raise HTTPException(status_code=400, detail="At least one muscle group is required")
     conn = get_db()
     try:
         conn.execute("""
