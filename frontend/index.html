@@ -940,7 +940,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.2.4';
+const APP_VERSION = '0.2.5';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -1231,7 +1231,14 @@ function switchTab(name) {
   if (name==='bank') renderBankTable();
   if (name==='trend') renderTrend();
   if (name==='progress') initProgress();
-  if (name==='export') { buildLogRows(); populateExportPhaseDropdown(); updateExportScopeCount(); updateExportSummary(); }
+  if (name==='export') {
+    const doExportTab = () => { buildLogRows(); populateExportPhaseDropdown(); updateExportScopeCount(); updateExportSummary(); };
+    if (!_allPhases || !_allPhases.length) {
+      apiFetch('/phases').then(ph => { _allPhases = ph || []; doExportTab(); }).catch(() => doExportTab());
+    } else {
+      doExportTab();
+    }
+  }
   if (name==='trend') { loadRecompScore(); loadPhases(); loadMacroData(); }
   if (name==='insights') openInsights();
   if (name==='users') { loadUsers(); loadActivityLog(); }
