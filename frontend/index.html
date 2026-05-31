@@ -4295,7 +4295,8 @@ function renderAnatomyHeatmap() {
     <text id="tooltip-pct" x="20" y="360" style="font-size:13px;font-weight:700;fill:var(--accent);"/>
   </g>
 </svg>`;
-  
+
+  container.innerHTML = svg;
 
   // Color the regions
   const muscleMap = {
