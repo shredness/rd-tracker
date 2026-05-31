@@ -4222,77 +4222,78 @@ function renderAnatomyHeatmap() {
   if (!container) return;
 
   // Simple SVG anatomy figure with labeled muscle regions
-  const svg = `<svg viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:400px;">
-  <!-- Front view -->
-  <g id="front-view">
-    <text x="100" y="20" style="font-size:12px;font-weight:600;fill:var(--text);">Front</text>
-    
+  const svg = `<svg viewBox="0 0 500 800" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:500px;">
+  <!-- Front view (left side) -->
+  <g id="front-figure">
     <!-- Head -->
-    <circle cx="100" cy="40" r="12" fill="var(--text3)" opacity="0.2"/>
+    <circle cx="125" cy="50" r="25" fill="var(--text3)" opacity="0.3"/>
     
-    <!-- Chest -->
-    <ellipse cx="100" cy="75" rx="25" ry="30" id="chest-front" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Chest')" onmouseout="hideTooltip()"/>
+    <!-- Neck -->
+    <line x1="125" y1="75" x2="125" y2="95" stroke="var(--text3)" stroke-width="8" opacity="0.3"/>
     
-    <!-- Abs -->
-    <rect x="90" y="110" width="20" height="35" rx="3" id="abs-front" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Abs')" onmouseout="hideTooltip()"/>
+    <!-- Chest/Pecs -->
+    <path d="M 80 100 Q 80 140 100 160 L 150 160 Q 170 140 170 100 Z" id="chest-front" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Shoulders -->
-    <ellipse cx="70" cy="60" rx="12" ry="18" id="shoulders-front-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Shoulders')" onmouseout="hideTooltip()"/>
-    <ellipse cx="130" cy="60" rx="12" ry="18" id="shoulders-front-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Shoulders')" onmouseout="hideTooltip()"/>
+    <ellipse cx="60" cy="95" rx="20" ry="25" id="shoulders-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <ellipse cx="190" cy="95" rx="20" ry="25" id="shoulders-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
-    <!-- Biceps/Forearms -->
-    <rect x="50" y="80" width="14" height="50" rx="4" id="biceps-front-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Biceps')" onmouseout="hideTooltip()"/>
-    <rect x="136" y="80" width="14" height="50" rx="4" id="biceps-front-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Biceps')" onmouseout="hideTooltip()"/>
+    <!-- Biceps -->
+    <rect x="30" y="110" width="22" height="65" rx="8" id="biceps-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <rect x="218" y="110" width="22" height="65" rx="8" id="biceps-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
-    <rect x="46" y="135" width="10" height="40" rx="3" id="forearms-front-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Forearms')" onmouseout="hideTooltip()"/>
-    <rect x="144" y="135" width="10" height="40" rx="3" id="forearms-front-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Forearms')" onmouseout="hideTooltip()"/>
+    <!-- Forearms -->
+    <rect x="28" y="180" width="18" height="60" rx="6" id="forearms-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <rect x="224" y="180" width="18" height="60" rx="6" id="forearms-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <!-- Abs -->
+    <rect x="100" y="160" width="50" height="70" rx="4" id="abs-front" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Quads -->
-    <rect x="80" y="180" width="40" height="70" rx="5" id="quads-front" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Quads')" onmouseout="hideTooltip()"/>
+    <rect x="80" y="280" width="90" height="120" rx="8" id="quads-front" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Calves -->
-    <rect x="85" y="260" width="30" height="50" rx="4" id="calves-front" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Calves')" onmouseout="hideTooltip()"/>
+    <rect x="90" y="410" width="70" height="90" rx="6" id="calves-front" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <text x="125" y="780" text-anchor="middle" style="font-size:14px;font-weight:600;fill:var(--text);">Front</text>
   </g>
-
-  <!-- Back view -->
-  <g id="back-view" transform="translate(200, 0)">
-    <text x="100" y="20" style="font-size:12px;font-weight:600;fill:var(--text);">Back</text>
-    
+  
+  <!-- Back view (right side) -->
+  <g id="back-figure" transform="translate(250, 0)">
     <!-- Head -->
-    <circle cx="100" cy="40" r="12" fill="var(--text3)" opacity="0.2"/>
+    <circle cx="125" cy="50" r="25" fill="var(--text3)" opacity="0.3"/>
     
-    <!-- Traps/Upper back -->
-    <path d="M 85 50 L 100 65 L 115 50 L 110 55 L 90 55 Z" id="traps-back" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Traps')" onmouseout="hideTooltip()"/>
+    <!-- Neck -->
+    <line x1="125" y1="75" x2="125" y2="95" stroke="var(--text3)" stroke-width="8" opacity="0.3"/>
+    
+    <!-- Traps -->
+    <path d="M 105 95 L 125 75 L 145 95 L 140 110 L 110 110 Z" id="traps-back" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Back/Lats -->
-    <ellipse cx="100" cy="100" rx="30" ry="35" id="back-lats" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Back')" onmouseout="hideTooltip()"/>
+    <path d="M 75 110 Q 60 140 65 200 Q 70 250 85 280 L 165 280 Q 180 250 185 200 Q 190 140 175 110 Z" id="back-lats" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <!-- Shoulders/Rear Delts -->
+    <ellipse cx="55" cy="105" rx="22" ry="28" id="shoulders-rear-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <ellipse cx="195" cy="105" rx="22" ry="28" id="shoulders-rear-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <!-- Triceps -->
+    <rect x="32" y="120" width="24" height="70" rx="8" id="triceps-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <rect x="244" y="120" width="24" height="70" rx="8" id="triceps-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <!-- Forearms -->
+    <rect x="28" y="195" width="20" height="65" rx="6" id="forearms-back-l" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    <rect x="252" y="195" width="20" height="65" rx="6" id="forearms-back-r" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Glutes -->
-    <ellipse cx="100" cy="155" rx="28" ry="22" id="glutes-back" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Glutes')" onmouseout="hideTooltip()"/>
-    
-    <!-- Shoulders/Rear delts -->
-    <ellipse cx="70" cy="70" rx="12" ry="18" id="shoulders-back-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Shoulders')" onmouseout="hideTooltip()"/>
-    <ellipse cx="130" cy="70" rx="12" ry="18" id="shoulders-back-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Shoulders')" onmouseout="hideTooltip()"/>
-    
-    <!-- Triceps/Forearms -->
-    <rect x="50" y="90" width="14" height="50" rx="4" id="triceps-back-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Triceps')" onmouseout="hideTooltip()"/>
-    <rect x="136" y="90" width="14" height="50" rx="4" id="triceps-back-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Triceps')" onmouseout="hideTooltip()"/>
-    
-    <rect x="46" y="145" width="10" height="40" rx="3" id="forearms-back-l" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Forearms')" onmouseout="hideTooltip()"/>
-    <rect x="144" y="145" width="10" height="40" rx="3" id="forearms-back-r" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Forearms')" onmouseout="hideTooltip()"/>
+    <ellipse cx="125" cy="270" rx="55" ry="35" id="glutes-back" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Hamstrings -->
-    <rect x="80" y="190" width="40" height="65" rx="5" id="hamstrings-back" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Hamstrings')" onmouseout="hideTooltip()"/>
+    <rect x="80" y="290" width="90" height="110" rx="8" id="hamstrings-back" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
     
     <!-- Calves -->
-    <rect x="85" y="265" width="30" height="50" rx="4" id="calves-back" cursor="pointer" onmouseover="showMuscleTooltip(event, 'Calves')" onmouseout="hideTooltip()"/>
-  </g>
-
-  <!-- Tooltip (hidden by default) -->
-  <g id="tooltip" style="display:none;pointer-events:none;">
-    <rect x="10" y="320" width="120" height="50" rx="4" fill="var(--bg2)" stroke="var(--border)" stroke-width="1"/>
-    <text id="tooltip-muscle" x="20" y="340" style="font-size:12px;font-weight:600;fill:var(--text);"/>
-    <text id="tooltip-pct" x="20" y="360" style="font-size:13px;font-weight:700;fill:var(--accent);"/>
+    <rect x="90" y="410" width="70" height="90" rx="6" id="calves-back" fill="var(--text3)" opacity="0.2" cursor="pointer"/>
+    
+    <text x="125" y="780" text-anchor="middle" style="font-size:14px;font-weight:600;fill:var(--text);">Back</text>
   </g>
 </svg>`;
 
@@ -4302,10 +4303,10 @@ function renderAnatomyHeatmap() {
   const muscleMap = {
     'Chest': ['chest-front'],
     'Back': ['back-lats'],
-    'Shoulders': ['shoulders-front-l', 'shoulders-front-r', 'shoulders-back-l', 'shoulders-back-r'],
-    'Biceps': ['biceps-front-l', 'biceps-front-r'],
-    'Triceps': ['triceps-back-l', 'triceps-back-r'],
-    'Forearms': ['forearms-front-l', 'forearms-front-r', 'forearms-back-l', 'forearms-back-r'],
+    'Shoulders': ['shoulders-l', 'shoulders-r', 'shoulders-rear-l', 'shoulders-rear-r'],
+    'Biceps': ['biceps-l', 'biceps-r'],
+    'Triceps': ['triceps-l', 'triceps-r'],
+    'Forearms': ['forearms-l', 'forearms-r', 'forearms-back-l', 'forearms-back-r'],
     'Quads': ['quads-front'],
     'Hamstrings': ['hamstrings-back'],
     'Glutes': ['glutes-back'],
