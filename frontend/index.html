@@ -940,7 +940,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.2.3';
+const APP_VERSION = '0.2.4';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -4107,7 +4107,7 @@ function showToast(msg) {
       <p>Import and export your session data as Excel files.</p>
       <ul>
         <li><strong>Import</strong> - download the template, fill it out (each row is one set), upload it. The Phase column is optional but will create phase records automatically from consecutive same-phase dates</li>
-        <li><strong>Export</strong> - downloads a full Log sheet (all sets with Phase column), a Trend sheet (weekly averages), and an ExerciseBank sheet</li>
+        <li><strong>Export</strong> - filter by date range (last 30/90/180/365 days or custom) and by phase before downloading. Exports a full Log sheet (all sets with Phase column), a Trend sheet, and an ExerciseBank sheet</li>
       </ul>
     </div>
 
@@ -4118,6 +4118,7 @@ function showToast(msg) {
         <li><strong>Profile</strong> - name, DOB, gender, height, target bodyweight, training week start, activity level. Used by the macro calculator and AI Insights</li>
         <li><strong>Protocols</strong> - supplements, peptides, and medications. Passed to the AI as context only. Agon does not provide medical advice</li>
         <li><strong>Account</strong> - change your password</li>
+        <li><strong>External API</strong> - generate a read-only API key for your data. Share the endpoint URL with any external AI or tool to give it access to your full training history. Revoke at any time</li>
         <li><strong>AI Insights</strong> - connect a Gemini or Claude API key. Keys are encrypted and stored on your server</li>
       </ul>
     </div>
@@ -4251,7 +4252,7 @@ function showToast(msg) {
       </div>
       <div class="guide-section">
         <div class="guide-tab-label"><i class="ti ti-file-download"></i> Data</div>
-        <p>Import historical sessions from Excel using the provided template. Export everything at any time. The template includes a Legend sheet explaining every field.</p>
+        <p>Import historical sessions from Excel using the provided template. Export with optional date range and phase filters. Generate a read-only External API key in Settings to share your data with any AI or external tool.</p>
       </div>
       <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:12px 14px;margin:16px 0;font-size:12px;color:var(--text2);line-height:1.6;">
         <strong style="color:var(--text);">Tip:</strong> Click your username in the top-right at any time to edit your profile, manage protocols, or connect an AI key. Click <strong>?</strong> to reopen this guide.
