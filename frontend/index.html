@@ -605,9 +605,8 @@
       </div>
     </div>
   </div>
-</div>
+  </div>
 
-<div class="toast" id="toast"></div>
   <!-- USERS (admin only) -->
   <div id="tab-users" class="tab-panel">
     <div class="card">
@@ -670,6 +669,8 @@
 
   <div style="text-align:center;padding:24px 0 12px;font-size:11px;color:var(--text3);" id="app-footer"></div>
 </div><!-- end main-app -->
+
+<div class="toast" id="toast"></div>
 
 <!-- New user modal -->
 <div class="modal-overlay" id="new-user-modal" style="display:none;" onclick="if(event.target===this)closeNewUserModal()">
@@ -940,7 +941,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
