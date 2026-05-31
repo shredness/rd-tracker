@@ -183,7 +183,9 @@ def init_db():
                          ('gender','NULL'),('week_start',"'Saturday'"),
                          ('height_in','NULL'),('target_bw','NULL'),
                          ('activity_level',"'1.55'"),
-                         ('onboarded',"'0'")]:
+                         ('onboarded',"'0'"),
+                         ('external_api_key','NULL'),
+                         ('last_seen_version',"'0.0.0'")]:
         try:
             conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} TEXT DEFAULT {default}")
             conn.commit()
@@ -399,7 +401,9 @@ class ProfileIn(BaseModel):
     height_in:      Optional[float] = None      # inches
     target_bw:      Optional[float] = None      # lbs
     activity_level: Optional[str]   = None      # TDEE multiplier string
-    onboarded:      Optional[str]   = None      # "1" once user completes onboarding
+    onboarded:          Optional[str] = None
+    last_seen_version:  Optional[str] = None
+    external_api_key:   Optional[str] = None
 
 class ProtocolIn(BaseModel):
     name:      str
@@ -728,7 +732,7 @@ def get_profile(user=Depends(current_user)):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level, onboarded FROM user_settings WHERE user_id=?",
+            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level, onboarded, last_seen_version FROM user_settings WHERE user_id=?",
             (user["id"],)
         ).fetchone()
     except Exception:
@@ -753,6 +757,7 @@ def get_profile(user=Depends(current_user)):
         "target_bw":        row["target_bw"]        if "target_bw"        in row.keys() else None,
         "activity_level":   row["activity_level"]   if "activity_level"   in row.keys() else "1.55",
         "onboarded":        row["onboarded"]        if "onboarded"        in row.keys() else "0",
+        "last_seen_version": row["last_seen_version"] if "last_seen_version" in row.keys() else "0.0.0",
     }
 
 @app.post("/profile")
@@ -773,17 +778,18 @@ def save_profile(body: ProfileIn, user=Depends(current_user)):
                 target_bw=COALESCE(?,target_bw),
                 activity_level=COALESCE(?,activity_level),
                 onboarded=COALESCE(?,onboarded),
+                last_seen_version=COALESCE(?,last_seen_version),
                 updated_at=datetime('now')
             WHERE user_id=?
         """, (body.first_name, body.last_name, body.dob, body.gender, body.week_start,
-                body.height_in, body.target_bw, body.activity_level, body.onboarded, user["id"]))
+                body.height_in, body.target_bw, body.activity_level, body.onboarded, body.last_seen_version, user["id"]))
     else:
         conn.execute("""
             INSERT INTO user_settings (user_id, first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level, onboarded)
             VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (user["id"], body.first_name, body.last_name, body.dob, body.gender,
                 body.week_start or "Saturday", body.height_in, body.target_bw,
-                body.activity_level or "1.55", body.onboarded or "0"))
+                body.activity_level or "1.55", body.onboarded or "0", body.last_seen_version or "0.0.0"))
     conn.commit()
     conn.close()
     return {"status": "saved"}
@@ -1667,3 +1673,146 @@ def delete_protocol(protocol_id: int, user=Depends(current_user)):
     conn.commit()
     conn.close()
     return {"status": "deleted"}
+
+# ── External API key management ───────────────────────────────
+import secrets as _secrets
+
+@app.get("/external/key")
+def get_external_key(user=Depends(current_user)):
+    """Return masked external API key status."""
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo accounts cannot have external API keys")
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT external_api_key FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    key = row["external_api_key"] if row and row["external_api_key"] else None
+    if not key:
+        return {"has_key": False, "masked": ""}
+    return {"has_key": True, "masked": key[:8] + "..." + key[-4:]}
+
+@app.post("/external/key/generate")
+def generate_external_key(user=Depends(current_user)):
+    """Generate a new external API key for the user."""
+    if user["role"] == "demo":
+        raise HTTPException(status_code=403, detail="Demo accounts cannot have external API keys")
+    new_key = "agon_" + _secrets.token_urlsafe(32)
+    conn = get_db()
+    existing = conn.execute("SELECT user_id FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+    if existing:
+        conn.execute("UPDATE user_settings SET external_api_key=? WHERE user_id=?", (new_key, user["id"]))
+    else:
+        conn.execute("INSERT INTO user_settings (user_id, external_api_key) VALUES (?,?)", (user["id"], new_key))
+    conn.commit()
+    conn.close()
+    return {"key": new_key}
+
+@app.delete("/external/key")
+def revoke_external_key(user=Depends(current_user)):
+    conn = get_db()
+    conn.execute("UPDATE user_settings SET external_api_key=NULL WHERE user_id=?", (user["id"],))
+    conn.commit()
+    conn.close()
+    return {"status": "revoked"}
+
+@app.get("/external/data")
+def get_external_data(key: str):
+    """Public read-only endpoint for external consumers. Authenticated by external API key."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT u.id, u.username, us.external_api_key FROM users u "
+            "JOIN user_settings us ON us.user_id = u.id "
+            "WHERE us.external_api_key=?", (key,)
+        ).fetchone()
+    except Exception:
+        row = None
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+
+    uid = row["id"]
+    username = row["username"]
+
+    # Sessions
+    sessions = conn.execute(
+        "SELECT date, bw, rd, total_density, exercises, notes FROM sessions WHERE user_id=? ORDER BY date",
+        (uid,)
+    ).fetchall()
+
+    # Profile
+    try:
+        prof = conn.execute(
+            "SELECT first_name, last_name, dob, gender, week_start, height_in, target_bw, activity_level FROM user_settings WHERE user_id=?",
+            (uid,)
+        ).fetchone()
+    except Exception:
+        prof = None
+
+    # Phases
+    phases = conn.execute(
+        "SELECT phase_type, start_date, end_date, notes FROM phases WHERE user_id=? ORDER BY start_date",
+        (uid,)
+    ).fetchall()
+
+    # Protocols
+    protocols = conn.execute(
+        "SELECT name, dose, frequency, notes FROM protocols WHERE user_id=? ORDER BY sort_order, id",
+        (uid,)
+    ).fetchall()
+
+    conn.close()
+
+    # Build structured response
+    session_list = []
+    for s in sessions:
+        try:
+            exs = json.loads(s["exercises"])
+        except Exception:
+            exs = []
+        session_list.append({
+            "date": s["date"],
+            "bw":   s["bw"],
+            "rd":   s["rd"],
+            "notes": s["notes"] or "",
+            "exercises": [{
+                "name":     ex.get("name"),
+                "tool":     ex.get("tool"),
+                "totalVol": ex.get("totalVol", 0),
+                "density":  ex.get("density", 0),
+                "sets": [{
+                    "load": st.get("rawLoad", 0),
+                    "trueLbs": st.get("trueLbs", 0),
+                    "reps": st.get("reps", 0),
+                    "time": st.get("time", 1.5),
+                    "vol":  st.get("vol", 0)
+                } for st in ex.get("sets", [])]
+            } for ex in exs]
+        })
+
+    return {
+        "meta": {
+            "username":    username,
+            "generated":   datetime.utcnow().isoformat() + "Z",
+            "total_sessions": len(session_list),
+            "date_range":  {
+                "from": session_list[0]["date"] if session_list else None,
+                "to":   session_list[-1]["date"] if session_list else None
+            }
+        },
+        "profile": {
+            "first_name":     prof["first_name"]     if prof else None,
+            "last_name":      prof["last_name"]       if prof else None,
+            "dob":            prof["dob"]             if prof else None,
+            "gender":         prof["gender"]          if prof else None,
+            "height_in":      prof["height_in"]       if prof else None,
+            "target_bw":      prof["target_bw"]       if prof else None,
+            "activity_level": prof["activity_level"]  if prof else None,
+            "week_start":     prof["week_start"]       if prof else "Saturday",
+        } if prof else {},
+        "phases":    [dict(p) for p in phases],
+        "protocols": [dict(p) for p in protocols],
+        "sessions":  session_list
+    }

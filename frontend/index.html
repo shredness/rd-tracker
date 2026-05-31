@@ -525,13 +525,45 @@
       <div id="import-preview" style="margin-top:8px;font-size:13px;color:var(--text2);"></div>
       <button class="btn btn-primary" id="import-confirm-btn" onclick="confirmImport()" style="display:none;margin-top:12px;">Import sessions</button>
     </div>
-    <div class="card" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-      <div style="flex:1;">
-        <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Export to Excel</div>
-        <div style="font-size:13px;color:var(--text2);">Log, Trend, and ExerciseBank sheets with relevant information on your progress.</div>
-        <div id="export-status" style="font-size:12px;margin-top:4px;"></div>
+    <div class="card">
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Export to Excel</div>
+          <div style="font-size:13px;color:var(--text2);">Log, Trend, and ExerciseBank sheets with relevant information on your progress.</div>
+          <div id="export-status" style="font-size:12px;margin-top:4px;"></div>
+        </div>
+        <button class="btn btn-export" id="export-btn" onclick="doExport()">↓ Download .xlsx</button>
       </div>
-      <button class="btn btn-export" id="export-btn" onclick="doExport()">↓ Download .xlsx</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Date range</label>
+          <select id="export-scope-date" style="font-size:12px;padding:5px 8px;" onchange="updateExportScope()">
+            <option value="all">All time</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="365">Last 12 months</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div id="export-custom-range" style="display:none;display:flex;gap:6px;align-items:flex-end;">
+          <div>
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">From</label>
+            <input type="date" id="export-from" style="font-size:12px;padding:5px 8px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">To</label>
+            <input type="date" id="export-to" style="font-size:12px;padding:5px 8px;">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Phase</label>
+          <select id="export-scope-phase" style="font-size:12px;padding:5px 8px;">
+            <option value="">All phases</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:var(--text3);" id="export-scope-count"></div>
+      </div>
     </div>
     <div class="card">
       <div class="section-label" style="margin-bottom:10px;">Sheet summary</div>
@@ -782,7 +814,20 @@
     <div id="settings-pw-msg" style="display:none;font-size:12px;margin-bottom:8px;"></div>
     <button class="btn btn-sm" onclick="saveSettingsPw()" style="margin-bottom:18px;">Change password</button>
 
-    <hr style="border:none;border-top:1px solid var(--border);margin-bottom:18px;">
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+
+    <!-- ── External API ── -->
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">External API</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Generate a read-only API key to share your training data with external tools or AI assistants. Anyone with this key can read your data.</div>
+    <div id="ext-key-status" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Loading...</div>
+    <div id="ext-key-value" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;font-family:monospace;word-break:break-all;margin-bottom:10px;color:var(--text);"></div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;" id="ext-key-url"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-sm btn-primary" onclick="generateExtKey()">Generate key</button>
+      <button class="btn btn-sm btn-danger" onclick="revokeExtKey()" id="ext-revoke-btn" style="display:none;">Revoke</button>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
 
     <!-- ── AI Insights ── -->
     <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">AI Insights</div>
@@ -895,7 +940,7 @@
 })();
 
 const API = '/api';
-const APP_VERSION = '0.1.4';
+const APP_VERSION = '0.2.0';
 
 // HTML escape helper for safely interpolating user data into innerHTML
 function escapeHtml(s) {
@@ -1155,6 +1200,7 @@ async function init() {
       const prof = await aiFetch('/profile');
       const isOnboarded = prof && prof.onboarded && prof.onboarded !== '0' && prof.onboarded !== 0;
       if (!isOnboarded) obShow();
+      else await checkWhatsNew();
     } catch(e) {
       // Profile fetch failed — show onboarding anyway for new users
       obShow();
@@ -2290,6 +2336,8 @@ async function updateExportSummary() {
   document.getElementById('exp-log-ct').textContent=lr.length+' rows';
   try { const tr=await buildTrendRows(); document.getElementById('exp-trend-ct').textContent=tr.length+' rows'; } catch(e){}
   const bankCt=document.getElementById('exp-bank-ct'); if(bankCt) bankCt.textContent=EXERCISE_BANK.length+' rows';
+  populateExportPhaseDropdown();
+  updateExportScopeCount();
   const cols=['Date','Weight (lbs)','Exercise','Load (lbs)','Reps','True (lbs)','Vol (lbs)','Time (min)','Density','Rel Density','Notes','Phase'];
   const previewCols=cols.filter(c=>c!=='Notes' && c!=='Phase');
   const table=document.getElementById('log-preview');
@@ -2309,7 +2357,11 @@ async function doExport() {
     }
     const XLSX=window.XLSX;
     const wb=XLSX.utils.book_new();
+    const scopedSessions = getExportScopedSessions();
+    const savedSessions = sessions;
+    sessions = scopedSessions; // temporarily scope
     const lr=buildLogRows();
+    sessions = savedSessions; // restore
     const wsL=XLSX.utils.json_to_sheet(lr.length?lr:[{'Date':'','Weight (lbs)':'','Exercise':'','Load (lbs)':'','Reps':'','True (lbs)':'','Vol (lbs)':'','Time (min)':'','Density':'','Rel Density':'','Notes':'','Phase':''}]);
     wsL['!cols']=[12,13,24,12,12,8,12,11,10,12,18,14].map(w=>({wch:w}));
     const tr=await buildTrendRows();
@@ -2944,6 +2996,7 @@ async function openSettings() {
   document.getElementById('ai-key').value = '';
   loadSettingsProfile();
   loadProtocols();
+  loadExtKey();
   try {
     const s = await aiFetch('/ai/settings');
     _aiHasKey = s.has_key;
@@ -3808,6 +3861,182 @@ function closeGuide() {
   document.getElementById('guide-modal').style.display = 'none';
 }
 
+
+// ── Changelog ─────────────────────────────────────────────────
+const CHANGELOG = {
+  '0.1.4': [
+    'Users tab restructured — activity summary and event log now inside main layout',
+    'Footer and Users panel placement fixed',
+    'Exercise bank: admin exercises now properly protected for guest users',
+  ],
+  '0.1.3': [
+    'Exercise bank: guests can only edit/delete their own exercises — admin exercises show a lock icon',
+    'Username comparison is now case-insensitive',
+  ],
+  '0.1.2': [
+    'Username login is now case-insensitive',
+    'localStorage keys renamed from prometheus-* to agon-* with automatic migration',
+  ],
+  '0.1.1': [
+    'Activity log added to Users tab — logins, sessions saved, AI queries, and imports tracked per user',
+    'Version number added to login screen and app footer',
+    'Mobile landscape mode optimised — tab labels collapse, header and cards tighten',
+  ],
+  '0.1.0': [
+    'Initial release: Workout logging, RD tracking, History, Trend, Progress, Insights, Data import/export',
+    'AI Insights via Gemini or Claude API',
+    'Macro calculator, training phases, recomp score',
+    'Onboarding sequence for new users',
+    'User guide (? button)',
+  ]
+};
+
+async function checkWhatsNew() {
+  if (!currentUser || currentUser.role === 'demo') return;
+  try {
+    const prof = await aiFetch('/profile');
+    const lastSeen = prof.last_seen_version || '0.0.0';
+    if (lastSeen === APP_VERSION) return;
+
+    // Collect all versions newer than lastSeen
+    const versions = Object.keys(CHANGELOG).sort((a,b) => {
+      const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+      for (let i=0; i<3; i++) if (pa[i]!==pb[i]) return pb[i]-pa[i];
+      return 0;
+    });
+    const newVersions = versions.filter(v => {
+      const pv = v.split('.').map(Number), pl = lastSeen.split('.').map(Number);
+      for (let i=0; i<3; i++) if (pv[i]!==pl[i]) return pv[i]>pl[i];
+      return false;
+    });
+    if (!newVersions.length) return;
+
+    // Build content
+    const content = newVersions.map(v => `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:6px;">v${v}</div>
+        <ul style="margin:0 0 0 16px;padding:0;font-size:13px;color:var(--text2);line-height:1.8;">
+          ${(CHANGELOG[v]||[]).map(item=>`<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>`).join('');
+
+    document.getElementById('wn-version').textContent = APP_VERSION;
+    document.getElementById('wn-content').innerHTML = content;
+    document.getElementById('whats-new-modal').style.display = 'flex';
+  } catch(e) { /* non-fatal */ }
+}
+
+async function closeWhatsNew() {
+  document.getElementById('whats-new-modal').style.display = 'none';
+  // Mark as seen
+  try {
+    await aiFetch('/profile', { method:'POST', body: JSON.stringify({ last_seen_version: APP_VERSION }) });
+  } catch(e) { /* non-fatal */ }
+}
+
+// ── External API key ──────────────────────────────────────────
+async function loadExtKey() {
+  const statusEl = document.getElementById('ext-key-status');
+  const valEl    = document.getElementById('ext-key-value');
+  const urlEl    = document.getElementById('ext-key-url');
+  const revokeBtn = document.getElementById('ext-revoke-btn');
+  if (!statusEl) return;
+  try {
+    const d = await aiFetch('/external/key');
+    if (d.has_key) {
+      statusEl.textContent = 'Key on file: ' + d.masked;
+      revokeBtn.style.display = '';
+    } else {
+      statusEl.textContent = 'No key generated yet.';
+      revokeBtn.style.display = 'none';
+    }
+    valEl.style.display = 'none';
+    if (urlEl) urlEl.textContent = '';
+  } catch(e) { statusEl.textContent = 'Could not load key status.'; }
+}
+
+async function generateExtKey() {
+  const statusEl  = document.getElementById('ext-key-status');
+  const valEl     = document.getElementById('ext-key-value');
+  const urlEl     = document.getElementById('ext-key-url');
+  const revokeBtn = document.getElementById('ext-revoke-btn');
+  try {
+    const d = await aiFetch('/external/key/generate', { method:'POST' });
+    valEl.textContent = d.key;
+    valEl.style.display = 'block';
+    statusEl.textContent = 'New key generated — copy it now, it will not be shown again in full.';
+    const dataUrl = window.location.origin + '/api/external/data?key=' + d.key;
+    if (urlEl) {
+      urlEl.innerHTML = 'Endpoint: <span style="font-family:monospace;font-size:11px;color:var(--text);">' +
+        escapeHtml(dataUrl) + '</span>';
+    }
+    revokeBtn.style.display = '';
+    showToast('Key generated');
+  } catch(e) { showToast('Could not generate key: ' + e.message); }
+}
+
+async function revokeExtKey() {
+  if (!confirm('Revoke this key? Any external tools using it will lose access immediately.')) return;
+  try {
+    await aiFetch('/external/key', { method:'DELETE' });
+    await loadExtKey();
+    document.getElementById('ext-key-value').style.display = 'none';
+    document.getElementById('ext-key-url').textContent = '';
+    showToast('Key revoked');
+  } catch(e) { showToast('Could not revoke: ' + e.message); }
+}
+
+// ── Scoped export ─────────────────────────────────────────────
+function updateExportScope() {
+  const scope = document.getElementById('export-scope-date')?.value;
+  const customRange = document.getElementById('export-custom-range');
+  if (customRange) customRange.style.display = scope === 'custom' ? 'flex' : 'none';
+  updateExportScopeCount();
+}
+
+function getExportScopedSessions() {
+  const scope      = document.getElementById('export-scope-date')?.value || 'all';
+  const phaseFilter = document.getElementById('export-scope-phase')?.value || '';
+  const now        = new Date();
+  let fromDate     = null;
+
+  if (scope === 'custom') {
+    const f = document.getElementById('export-from')?.value;
+    const t = document.getElementById('export-to')?.value;
+    return sessions.filter(s => {
+      if (f && s.date < f) return false;
+      if (t && s.date > t) return false;
+      if (phaseFilter && exportPhaseMap[s.date] !== phaseFilter) return false;
+      return true;
+    });
+  } else if (scope !== 'all') {
+    const days = parseInt(scope);
+    const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
+    fromDate = cutoff.toISOString().slice(0, 10);
+  }
+
+  return sessions.filter(s => {
+    if (fromDate && s.date < fromDate) return false;
+    if (phaseFilter && exportPhaseMap[s.date] !== phaseFilter) return false;
+    return true;
+  });
+}
+
+function updateExportScopeCount() {
+  const countEl = document.getElementById('export-scope-count');
+  if (!countEl) return;
+  const scoped = getExportScopedSessions();
+  countEl.textContent = scoped.length + ' session' + (scoped.length !== 1 ? 's' : '');
+}
+
+function populateExportPhaseDropdown() {
+  const sel = document.getElementById('export-scope-phase');
+  if (!sel) return;
+  const phases = [...new Set(Object.values(exportPhaseMap))].sort();
+  sel.innerHTML = '<option value="">All phases</option>' +
+    phases.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+}
+
 function showToast(msg) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');
@@ -4032,6 +4261,17 @@ function showToast(msg) {
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- What's new modal -->
+<div class="modal-overlay" id="whats-new-modal" style="display:none;" onclick="if(event.target===this)closeWhatsNew()">
+  <div class="modal" style="max-width:480px;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;">What's new in v<span id="wn-version"></span></h3>
+      <button class="btn btn-sm" onclick="closeWhatsNew()">Got it</button>
+    </div>
+    <div id="wn-content"></div>
   </div>
 </div>
 </body>
